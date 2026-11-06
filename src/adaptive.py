@@ -1,5 +1,6 @@
 import gc
 from collections import deque
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -36,6 +37,7 @@ TIERS = {
 _TIER_ORDER = ("Max", "High", "Medium", "Low")
 _GENERATOR = Generator()
 _LATENCY_HISTORY = deque(maxlen=5)
+_COCO_LORA_DIR = Path(__file__).resolve().parent.parent / "outputs" / "lora_coco"
 
 
 def _process_image(raw_image, postprocess):
@@ -250,6 +252,7 @@ def generate_with_fallback(
     peak_mem_mb = 0.0
     total_latency_s = 0.0
     total_load_time_s = 0.0
+    coco_lora_used = False
     rerank_prompt = original_prompt
     if concept_terms:
         concept_descriptions = [CONCEPT_MAP[concept] for concept in concept_terms]
@@ -258,7 +261,12 @@ def generate_with_fallback(
         )
 
     for tier_name in _TIER_ORDER[start_index:]:
-        settings = TIERS[tier_name]
+        settings = dict(TIERS[tier_name])
+        if tier_name == "Max" and _COCO_LORA_DIR.is_dir():
+            settings["config"] = "fp16_lora"
+            if not coco_lora_used:
+                reason += " Using COCO LoRA for the Max tier."
+                coco_lora_used = True
         candidates = []
         try:
             for candidate_index in range(candidate_count):

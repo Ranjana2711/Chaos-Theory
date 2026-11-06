@@ -1,98 +1,102 @@
-# Flicker Failure Cases
+# Flicker – Failure-case analysis (Team Chaos Theory)
 
-Each image link below is a placeholder for a failure illustration; no image files are included.
+## 1. Counting and colour binding
 
-## Object count and color binding
+![Counting and colour binding failure](failures/01_counting_bananas.png)
 
-| Field | Observation |
+| Field | Analysis |
 |---|---|
 | Prompt | “three blue cups to the left of two yellow bananas” |
-| Tier | High |
-| Expected | Three blue cups to the left of two yellow bananas |
-| Actual | About ten bananas and no blue cups |
-| Root cause | Weak object counting and color-to-object binding |
-| Mitigation | The adaptive system can try higher tiers and compare candidates, but the supplied observation did not establish a successful correction |
-| Outcome | Failure remains unresolved in the reported example |
+| Tier / config | High tier (fast: fp16 + LCM-LoRA) |
+| Expected | 3 blue cups and 2 bananas |
+| Actual | About 10 bananas, no blue cups, and one white cup |
+| Root cause | SD v1.5's CLIP text encoder binds counts and colours to objects weakly. |
+| Mitigation tried | CLIP best-of-N reranking and Max tier |
+| Outcome | Known limitation |
 
-![Object count and color binding failure placeholder](failures/object-count-color-binding.png)
+## 2. Text rendering and IP
 
-## Text and franchise-name prompt
+![Garbled text and trademarked-character imitation](failures/02_text_rendering.png)
 
-| Field | Observation |
+| Field | Analysis |
 |---|---|
-| Prompt | A prompt containing a franchise name |
-| Tier | Not supplied |
-| Expected | Readable text and a faithful depiction of the requested subject |
-| Actual | Garbled text: “Pekémciov”; the generation also imitates trademarked characters |
-| Root cause | The text encoder represents tokens rather than spelling out letters; the model can reproduce trademarked visual subjects |
-| Mitigation | No successful mitigation was reported; use caution with generated text and branded or copyrighted subjects |
-| Outcome | Text rendering and imitation remain limitations |
+| Prompt | A prompt naming a cartoon franchise |
+| Tier / config | Not specified |
+| Expected | Readable lettering and a depiction that does not imitate trademarked characters |
+| Actual | Garbled lettering (“Pekémciov”) and imitations of trademarked characters |
+| Root cause | The text encoder sees word tokens, not letters, so the model never learned spelling; it reproduces styles from training data. |
+| Mitigation tried | Documented in Ethics; future work is a prompt filter for brand/character names. |
+| Outcome | Known limitation |
 
-![Text and franchise-name failure placeholder](failures/text-and-franchise-prompt.png)
+## 3. Rare concept composition
 
-## Headphones omitted and attribute leakage
+![High tier result](failures/03a_headphones_high.png)
 
-| Field | Observation |
+![Max tier result](failures/03b_headphones_max.png)
+
+| Field | Analysis |
 |---|---|
-| Prompt | “a cat wearing headphones sitting on a sofa” |
-| Tier | High; Max was also tried |
-| Expected | A cat wearing visible headphones while sitting on a sofa |
-| Actual | High omitted headphones. Max also failed, showing only a partial headband; “red” moved to the sofa |
-| Root cause | The model did not reliably render the accessory or bind the attribute to the intended object |
-| Mitigation | Tried concrete wording, reranking, and Max |
-| Outcome | The reported attempts did not fully resolve the failure |
+| Prompt | “a cat wearing large red over-ear headphones, sitting on a sofa” |
+| Tier / config | High (fast, 4–8 steps, guidance 1.0–1.8); Max (fp16, 25 steps, guidance 7.5) |
+| Expected | A cat wearing large red over-ear headphones while sitting on a sofa |
+| Actual | High omitted the headphones. Max also omitted them, drew only a partial dark band, and moved “red” onto the sofa (attribute leakage). |
+| Root cause | Rare animal-plus-accessory pairs in training data and weak attribute binding; low LCM guidance favours the main subject. |
+| Mitigation tried | Concrete wording, prompt enhancer, 3-candidate CLIP reranking, and Max tier |
+| Outcome | Not fixed; documented |
 
-![Headphones and attribute leakage failure placeholder](failures/headphones-attribute-leakage.png)
+## 4. Small-face distortion
 
-## Distorted small faces
+![Distorted small faces](failures/04_small_faces.png)
 
-| Field | Observation |
+| Field | Analysis |
 |---|---|
 | Prompt | “a girl sitting in the garden with a cat” |
-| Tier | Max |
+| Tier / config | Max tier |
 | Expected | A coherent scene with recognizable faces |
-| Actual | Small faces were distorted at 512×512 |
-| Root cause | Small facial features are difficult to render at the evaluated image size |
-| Mitigation | Use close-up framing; face restoration is future work |
-| Outcome | Close-up framing is the recommended workaround; restoration has not yet been implemented |
+| Actual | Faces are distorted because a small face gets too few pixels at 512×512. |
+| Root cause | A small face receives too few pixels at 512×512. |
+| Mitigation tried | Close-up framing (“close-up portrait of…”); a face restoration model is future work. |
+| Outcome | Close-up framing is a workaround |
 
-![Distorted small faces failure placeholder](failures/distorted-small-faces.png)
+## 5. Abstract subject omitted
 
-## Ghost omitted
+![Ghost omitted in a graveyard](failures/05a_ghost_graveyard.png)
 
-| Field | Observation |
+![Ghost omitted in an abandoned building](failures/05b_ghost_building.png)
+
+| Field | Analysis |
 |---|---|
-| Prompt | “create a ghost in an abandoned building” |
-| Tier | Not supplied |
-| Expected | A visible ghost in an abandoned building |
-| Actual | No ghost appeared |
-| Root cause | Photo-style enhancement terms worked against the fantasy concept |
-| Mitigation | The prompt enhancer was updated with mood-aware terms, leading-instruction removal, and concept expansion |
-| Outcome | The reported code change targets this failure; no post-fix measurement was supplied |
+| Prompt | “ghost in a graveyard”; “create a ghost in an abandoned building” |
+| Tier / config | High tier |
+| Expected | A visible ghost in each scene |
+| Actual | The scenes were drawn, but no ghost appeared. |
+| Root cause | “Ghost” has no consistent visual form. The enhancer initially added “professional photograph, natural lighting,” pushing toward realistic empty scenes; “create” is an instruction word the model ignores. |
+| Mitigation tried | Mood-aware enhancer (fantasy → digital art terms), stripping instruction words, concept expansion (ghost → translucent glowing figure), and concept-grounded reranking |
+| Outcome | Partially improved |
 
-![Ghost omitted failure placeholder](failures/ghost-omitted.png)
+## 6. Configuration findings from ablations
 
-## LCM steps and guidance regression
-
-| Field | Observation |
+| Field | Analysis |
 |---|---|
-| Prompt | Evaluation prompts; no single prompt supplied |
-| Tier | Fast / LCM |
-| Expected | Additional sampling steps or higher guidance would improve quality enough to justify added compute |
-| Actual | Eight steps scored worse than four. Guidance 1.8 also scored worse and took 35% longer than guidance 1.0 |
-| Root cause | The measured fast configuration performs best at four steps and guidance 1.0; guidance above 1 requires a second UNet pass |
-| Mitigation | Keep High at four steps and retain guidance 1.0 |
-| Outcome | The selected fast settings reflect the measured results |
-
-![LCM steps and guidance regression placeholder](failures/lcm-steps-guidance.png)
+| Prompt | No image; configuration ablations |
+| Tier / config | Fast / LCM |
+| Expected | More steps or higher guidance would improve results enough to justify added compute. |
+| Actual | 8 LCM steps scored worse than 4 (CLIP 30.65 vs 31.56, FID 144.9 vs 141.9). Guidance 1.8 was worse and 35% slower than 1.0 (CLIP 31.42 vs 31.56, latency 0.71 vs 0.53 s). |
+| Root cause | The tested 4-step, guidance 1.0 configuration outperformed the tested alternatives on these measures. |
+| Mitigation tried | High uses 4 steps and guidance 1.0. |
+| Outcome | Configuration action taken |
 
 ## Summary
 
-| Failure | Main issue | Reported mitigation or status |
-|---|---|---|
-| Object count and color binding | Incorrect counts and missing color-bound objects | No successful correction reported |
-| Text and franchise-name prompt | Garbled text and trademark imitation | Known limitation |
-| Headphones and attribute leakage | Accessory omission and incorrect attribute binding | Concrete wording, reranking, and Max did not fully resolve it |
-| Distorted small faces | Low detail in small faces | Close-up framing; face restoration is future work |
-| Ghost omitted | Fantasy concept suppressed by photo-style terms | Enhancer updated; no post-fix measurement supplied |
-| LCM steps and guidance regression | More compute reduced quality or increased latency | Retain four steps and guidance 1.0 |
+| Case | Root cause | Mitigation | Status |
+|---|---|---|---|
+| Counting and colour binding | Weak count and colour binding in the SD v1.5 CLIP text encoder | CLIP best-of-N reranking; Max tier | Known limitation |
+| Text rendering and IP | Token-based text representation and reproduction of styles from training data | Ethics documentation; brand/character prompt filter is future work | Known limitation |
+| Rare concept composition | Rare animal-accessory combinations and weak attribute binding | Concrete wording, prompt enhancer, 3-candidate reranking, Max tier | Not fixed; documented |
+| Small-face distortion | Too few pixels for small faces at 512×512 | Close-up framing; face restoration is future work | Workaround |
+| Abstract subject omitted | Inconsistent visual form and enhancement/instruction phrasing that steered away from the concept | Fantasy-aware terms, instruction stripping, concept expansion, concept-grounded reranking | Partially improved |
+| Configuration findings | More LCM steps and higher guidance underperformed in the measured ablations | High uses 4 steps, guidance 1.0 | Action taken |
+
+## Lessons
+
+Most failures come from SD v1.5's text encoder; larger models (SDXL, SD3) handle composition better but exceed our mobile memory budget, which is the trade-off this project studies.

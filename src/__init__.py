@@ -1,0 +1,1 @@
+"""Chaos Theory: resource-efficient text-to-image pipeline."""

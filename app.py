@@ -61,10 +61,19 @@ def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
         optimizations = f"fp16 + LCM-LoRA, {steps} steps"
     elif model_config == "tiny":
         optimizations = "fp16 + BK-SDM-Tiny + Lanczos upscale"
+    elif model_config == "dream":
+        optimizations = (
+            "fp16 DreamShaper 8, 25 steps "
+            "(+ emphasis / concept reranking when applied)"
+        )
+    elif model_config == "fp16_lora":
+        optimizations = "fp16 + COCO LoRA, 25 steps"
     elif model_config == "fp16":
         optimizations = "fp16, 25 steps"
-    else:
+    elif model_config == "baseline":
         optimizations = "none (fp32 reference)"
+    else:
+        optimizations = "optimization details unavailable"
 
     info = (
         f"**Tier used:** {result['tier_used']}  \n"

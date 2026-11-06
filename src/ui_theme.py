@@ -296,7 +296,7 @@ HEAD = FONTS + SCRIPT.replace("__MOSAIC__", json.dumps(MOSAIC))
 CSS = r"""
 :root {
   --night: #060a12;
-  --panel: rgba(10, 16, 30, 0.55);
+  --panel: rgba(10, 16, 30, 0.78);
   --panel-strong: rgba(6, 10, 18, 0.80);
   --line: rgba(200, 225, 255, 0.12);
   --text: #eaf2ff;
@@ -355,7 +355,7 @@ html, body { background: var(--night) !important; }
 body.flicker-has-mosaic .gradio-container .block,
 body.flicker-has-mosaic .gradio-container .form,
 body.flicker-has-mosaic .gradio-container .panel {
-  background: rgba(8, 12, 22, 0.74) !important;
+  background: rgba(8, 12, 22, 0.85) !important;
 }
 
 gradio-app, .gradio-container, .gradio-container .main, .gradio-container .contain {
@@ -414,8 +414,6 @@ gradio-app, .gradio-container, .gradio-container .main, .gradio-container .conta
   background: var(--panel) !important;
   border: 1px solid var(--line) !important;
   border-radius: 16px !important;
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
 }
 .gradio-container .form .block { background: transparent !important; border: none !important; }
 
@@ -486,6 +484,22 @@ gradio-app, .gradio-container, .gradio-container .main, .gradio-container .conta
 
 footer { opacity: 0.45; }
 
+/* Dropdown list must float above the glass panels */
+.gradio-container ul.options {
+  background: #0b1120 !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 10px !important;
+  z-index: 100 !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.gradio-container ul.options li { color: var(--text) !important; }
+.gradio-container ul.options li:hover,
+.gradio-container ul.options li.selected { background: rgba(255, 201, 92, 0.18) !important; }
+
+/* Let long checkbox labels wrap instead of scrolling sideways */
+.gradio-container label span { white-space: normal !important; overflow-wrap: anywhere; }
+.gradio-container .form > * { min-width: 0; }
+
 @media (max-width: 768px) {
   #flicker-mosaic { grid-template-columns: repeat(3, 1fr); grid-auto-rows: 20vh; }
   #flicker-mosaic::after { background: rgba(6,10,18,0.78); }
@@ -525,8 +539,8 @@ def make_theme():
             body_background_fill_dark="transparent",
             body_text_color="#eaf2ff",
             body_text_color_dark="#eaf2ff",
-            block_background_fill="rgba(10,16,30,0.55)",
-            block_background_fill_dark="rgba(10,16,30,0.55)",
+            block_background_fill="rgba(10,16,30,0.78)",
+            block_background_fill_dark="rgba(10,16,30,0.78)",
             block_border_color="rgba(200,225,255,0.12)",
             block_border_color_dark="rgba(200,225,255,0.12)",
             input_background_fill="rgba(6,10,18,0.80)",

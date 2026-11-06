@@ -18,6 +18,52 @@ _ANIMAL_NEGATIVE_TERMS = (
 )
 
 CONCEPT_MAP = {
+    "apple tree": "with ripe red apples hanging from the branches",
+    "orange tree": "with ripe oranges on the branches",
+    "lemon tree": "with bright yellow lemons on the branches",
+    "mango tree": "with ripe mangoes on the branches",
+    "cherry tree": "with red cherries on the branches",
+    "fruit tree": "with ripe fruit on the branches",
+    "coconut tree": "tall palm with coconuts",
+    "sunflower": "with large yellow petals and a dark center",
+    "cactus": "green spiny cactus",
+    "bonsai": "miniature tree in a shallow pot",
+    "rose": "red rose with layered petals",
+    "birthday cake": "with lit candles",
+    "pizza": "with melted cheese and toppings",
+    "burger": "with a sesame bun, lettuce and cheese",
+    "ice cream": "scoops of ice cream in a cone",
+    "coffee": "a cup of coffee with steam rising",
+    "sushi": "sushi rolls on a wooden plate",
+    "biryani": "rice dish with spices served in a bowl",
+    "dosa": "thin crispy golden crepe with chutney",
+    "beach": "with sand and ocean waves",
+    "waterfall": "water cascading down rocks",
+    "volcano": "erupting with glowing lava",
+    "desert": "sand dunes under a clear sky",
+    "snowy mountain": "mountain peaks covered in snow",
+    "city at night": "skyline with glowing lit windows",
+    "library": "tall shelves full of books",
+    "rainforest": "dense green jungle with mist",
+    "clock": "with a clear clock face and hands",
+    "bicycle": "with two wheels and handlebars",
+    "guitar": "acoustic guitar with six strings",
+    "umbrella": "open umbrella",
+    "lighthouse": "tall striped lighthouse with a glowing lamp",
+    "hot air balloon": "colorful hot air balloon floating in the sky",
+    "rainbow": "colorful rainbow arc across the sky",
+    "candle": "lit candle with a small flame",
+    "christmas tree": "decorated with lights and ornaments",
+    "jack-o-lantern": "carved pumpkin glowing from inside",
+    "diwali": "glowing oil lamps and colorful rangoli",
+    "chef": "chef in a white uniform and tall white hat",
+    "astronaut": "astronaut in a white spacesuit with helmet",
+    "firefighter": "firefighter in a yellow protective suit and helmet",
+    "doctor": "doctor in a white coat with a stethoscope",
+    "rainy": "rain falling, wet reflective ground",
+    "snowing": "snowflakes falling",
+    "sunset": "orange and pink sky with the sun near the horizon",
+    "night sky": "dark sky full of stars",
     "ghost": "translucent glowing white ghostly figure, spectral apparition",
     "spirit": "glowing ethereal figure",
     "listening to music": "wearing large over-ear headphones, musical notes in the air",
@@ -27,6 +73,54 @@ CONCEPT_MAP = {
     "angel": "figure with large white feathered wings and halo",
     "robot": "metallic humanoid robot",
 }
+_FEATURE_CONCEPTS = frozenset((
+    "apple tree",
+    "orange tree",
+    "lemon tree",
+    "mango tree",
+    "cherry tree",
+    "fruit tree",
+    "coconut tree",
+    "sunflower",
+    "cactus",
+    "bonsai",
+    "rose",
+    "birthday cake",
+    "pizza",
+    "burger",
+    "ice cream",
+    "coffee",
+    "sushi",
+    "biryani",
+    "dosa",
+    "beach",
+    "waterfall",
+    "volcano",
+    "desert",
+    "snowy mountain",
+    "city at night",
+    "library",
+    "rainforest",
+    "clock",
+    "bicycle",
+    "guitar",
+    "umbrella",
+    "lighthouse",
+    "hot air balloon",
+    "rainbow",
+    "candle",
+    "christmas tree",
+    "jack-o-lantern",
+    "diwali",
+    "chef",
+    "astronaut",
+    "firefighter",
+    "doctor",
+    "rainy",
+    "snowing",
+    "sunset",
+    "night sky",
+))
 
 _LEADING_INSTRUCTIONS = (
     "show me",
@@ -143,7 +237,11 @@ def enhance_prompt(prompt):
     ]
 
     expanded_prompt = analysis_prompt
-    expansions = [CONCEPT_MAP[concept] for concept in concept_terms]
+    expansions = [
+        CONCEPT_MAP[concept]
+        for concept in concept_terms
+        if concept not in _FEATURE_CONCEPTS
+    ]
     if expansions and subject:
         insertion_point = len(subject)
         expanded_prompt = (
@@ -152,6 +250,19 @@ def enhance_prompt(prompt):
         )
     elif expansions:
         expanded_prompt = ", ".join(expansions + ([analysis_prompt] if analysis_prompt else []))
+
+    for concept in sorted(_FEATURE_CONCEPTS, key=len, reverse=True):
+        feature = CONCEPT_MAP[concept]
+        if re.search(re.escape(feature), analysis_prompt, flags=re.IGNORECASE):
+            continue
+        pattern = re.compile(
+            r"(?<!\w)" + re.escape(concept) + r"(?!\w)",
+            flags=re.IGNORECASE,
+        )
+        expanded_prompt = pattern.sub(
+            lambda match: f"{match.group(0)}, {feature}",
+            expanded_prompt,
+        )
 
     if animal:
         expanded_prompt = f"a real {animal}, animal photograph, {expanded_prompt}"

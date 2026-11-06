@@ -45,6 +45,7 @@ _CONFIG_LATENCY_ESTIMATES = {
     ("fast", 2): 0.4,
     ("tiny", 15): 1.4,
 }
+_LAST_GENERATION_CANDIDATE_COUNT = None
 _RARE_CONCEPTS = ("ghost", "headphones", "dragon", "spirit")
 FRANCHISE_TERMS = (
     "marvel",
@@ -185,13 +186,7 @@ def choose_tier(time_budget_s=10, prompt=""):
         tier_index = _TIER_ORDER.index("Low")
         reason += " The short time budget selects Low."
 
-    if _LATENCY_HISTORY and _LATENCY_HISTORY[-1] > time_budget_s:
-        if tier_index < len(_TIER_ORDER) - 1:
-            tier_index += 1
-            reason += " The previous generation exceeded the time budget; lowering one tier."
-        else:
-            reason += " The previous generation exceeded the time budget; already at Low."
-    elif (
+    if (
         len(_LATENCY_HISTORY) >= 3
         and all(latency < 0.4 * time_budget_s for latency in list(_LATENCY_HISTORY)[-3:])
         and tier_index > _TIER_ORDER.index("High")
@@ -214,6 +209,12 @@ def _drop_pipeline(generator):
 def _record_config_latency(settings, latency_s):
     key = (settings["config"], settings["steps"])
     _CONFIG_LATENCY_ESTIMATES[key] = latency_s
+
+
+def _candidate_count_for_tier(tier, time_budget_s):
+    settings = TIERS[tier]
+    estimate = _CONFIG_LATENCY_ESTIMATES[(settings["config"], settings["steps"])]
+    return max(1, min(4, math.floor(0.8 * time_budget_s / estimate)))
 
 
 def _emphasis_terms(prompt, prompt_analysis, concept_terms, subject=""):
@@ -246,6 +247,8 @@ def generate_with_fallback(
     enhance=True,
     num_candidates="auto",
 ):
+    global _LAST_GENERATION_CANDIDATE_COUNT
+
     original_prompt = prompt
     if any(
         re.search(
@@ -292,10 +295,15 @@ def generate_with_fallback(
                     + torch.cuda.memory_reserved()
                 ) / (1024**3) >= 4.0
             )
-            initial_tier = "Max" if can_use_max else "High"
+            max_count = _candidate_count_for_tier("Max", time_budget_s)
+            max_estimate = _CONFIG_LATENCY_ESTIMATES[
+                (TIERS["Max"]["config"], TIERS["Max"]["steps"])
+            ]
+            can_budget_max = max_estimate * max_count <= 0.8 * time_budget_s
+            initial_tier = "Max" if can_use_max and can_budget_max else "High"
             reason += (
                 " Applying concept grounding: selecting "
-                f"{initial_tier} based on available VRAM and time."
+                f"{initial_tier} based on available VRAM and candidate budget."
             )
     elif tier in TIERS:
         initial_tier = tier
@@ -304,13 +312,33 @@ def generate_with_fallback(
         raise ValueError(f"Unknown tier {tier!r}; choose 'auto' or one of {tuple(TIERS)}")
 
     if num_candidates == "auto":
-        settings = TIERS[initial_tier]
-        latency_key = (settings["config"], settings["steps"])
-        latency_estimate = _CONFIG_LATENCY_ESTIMATES[latency_key]
-        candidate_count = max(
-            1,
-            min(4, math.floor(0.8 * time_budget_s / latency_estimate)),
-        )
+        candidate_count = _candidate_count_for_tier(initial_tier, time_budget_s)
+        if _LATENCY_HISTORY and _LATENCY_HISTORY[-1] > time_budget_s:
+            if _LAST_GENERATION_CANDIDATE_COUNT is not None:
+                if _LAST_GENERATION_CANDIDATE_COUNT > 1:
+                    candidate_count = min(
+                        candidate_count, _LAST_GENERATION_CANDIDATE_COUNT - 1
+                    )
+                    reason += (
+                        " The previous generation exceeded the time budget; "
+                        "reducing candidates before lowering a tier."
+                    )
+                else:
+                    tier_index = _TIER_ORDER.index(initial_tier)
+                    if tier_index < len(_TIER_ORDER) - 1:
+                        initial_tier = _TIER_ORDER[tier_index + 1]
+                        candidate_count = _candidate_count_for_tier(
+                            initial_tier, time_budget_s
+                        )
+                        reason += (
+                            " The previous generation exceeded the time budget "
+                            "at one candidate; lowering one tier."
+                        )
+                    else:
+                        reason += (
+                            " The previous generation exceeded the time budget; "
+                            "already at Low."
+                        )
         reason += (
             f" {candidate_count} candidates within {time_budget_s:g} s budget."
         )
@@ -408,6 +436,7 @@ def generate_with_fallback(
 
         latency_s = total_latency_s
         _LATENCY_HISTORY.append(latency_s)
+        _LAST_GENERATION_CANDIDATE_COUNT = candidate_count
         return {
             "raw_image": raw_image,
             "final_image": final_image,

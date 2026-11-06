@@ -9,7 +9,7 @@ from PIL import Image
 
 from src.generate import Generator
 from src.prompt_analyzer import analyze_prompt
-from src.prompt_enhancer import NEGATIVE_PROMPT, enhance_prompt
+from src.prompt_enhancer import CONCEPT_MAP, NEGATIVE_PROMPT, enhance_prompt
 from src.postprocess import (
     detect_artifacts,
     lanczos_resize,
@@ -191,14 +191,37 @@ def generate_with_fallback(
 ):
     original_prompt = prompt
     if enhance:
-        generation_prompt, negative_prompt, added_terms = enhance_prompt(prompt)
+        (
+            generation_prompt,
+            negative_prompt,
+            added_terms,
+            concept_terms,
+            subject,
+        ) = enhance_prompt(prompt)
     else:
         generation_prompt = prompt
         negative_prompt = None
         added_terms = []
+        concept_terms = []
+        subject = ""
 
     if tier == "auto":
         initial_tier, reason = choose_tier(time_budget_s, generation_prompt)
+        if concept_terms:
+            resources = profile_resources()
+            can_use_max = (
+                resources["device_type"] == "cuda"
+                and time_budget_s >= 5
+                and (
+                    resources["free_vram_mb"] * (1024**2)
+                    + torch.cuda.memory_reserved()
+                ) / (1024**3) >= 4.0
+            )
+            initial_tier = "Max" if can_use_max else "High"
+            reason += (
+                " Applying concept grounding: selecting "
+                f"{initial_tier} based on available VRAM and time."
+            )
     elif tier in TIERS:
         initial_tier = tier
         reason = f"Requested {tier} tier."
@@ -206,9 +229,12 @@ def generate_with_fallback(
         raise ValueError(f"Unknown tier {tier!r}; choose 'auto' or one of {tuple(TIERS)}")
 
     if num_candidates == "auto":
-        candidate_count = (
-            3 if time_budget_s >= 5 and initial_tier in ("High", "Medium") else 1
-        )
+        if concept_terms and tier == "auto":
+            candidate_count = 3 if initial_tier == "Max" else 4
+        else:
+            candidate_count = (
+                3 if time_budget_s >= 5 and initial_tier in ("High", "Medium") else 1
+            )
     elif isinstance(num_candidates, int) and not isinstance(num_candidates, bool):
         if num_candidates < 1:
             raise ValueError("num_candidates must be positive or 'auto'")
@@ -223,6 +249,12 @@ def generate_with_fallback(
     peak_mem_mb = 0.0
     total_latency_s = 0.0
     total_load_time_s = 0.0
+    rerank_prompt = original_prompt
+    if concept_terms:
+        concept_descriptions = [CONCEPT_MAP[concept] for concept in concept_terms]
+        rerank_prompt = ", ".join(
+            part for part in (subject, *concept_descriptions) if part
+        )
 
     for tier_name in _TIER_ORDER[start_index:]:
         settings = TIERS[tier_name]
@@ -250,7 +282,7 @@ def generate_with_fallback(
             _drop_pipeline(_GENERATOR)
             continue
 
-        chosen_index, candidate_scores = pick_best(candidates, original_prompt)
+        chosen_index, candidate_scores = pick_best(candidates, rerank_prompt)
         raw_image = candidates[chosen_index]
         final_image, intermediates, quality_before, quality_after = _process_image(
             raw_image, postprocess
@@ -272,7 +304,7 @@ def generate_with_fallback(
             total_load_time_s += generated["load_time_s"]
             peak_mem_mb = max(peak_mem_mb, generated["peak_mem_mb"])
             candidates[chosen_index] = generated["image"]
-            chosen_index, candidate_scores = pick_best(candidates, original_prompt)
+            chosen_index, candidate_scores = pick_best(candidates, rerank_prompt)
             raw_image = candidates[chosen_index]
             final_image, intermediates, quality_before, quality_after = _process_image(
                 raw_image, postprocess
@@ -308,6 +340,8 @@ def generate_with_fallback(
             "original_prompt": original_prompt,
             "enhanced_prompt": generation_prompt,
             "added_terms": added_terms,
+            "concept_terms": concept_terms,
+            "subject": subject,
             "prompt_analysis": prompt_analysis,
             "resources": profile_resources(),
             "quality_before": quality_before,

@@ -5,7 +5,7 @@ import re
 import gradio as gr
 
 from src.adaptive import TIERS, generate_with_fallback
-from src.ui_theme import CSS, HEAD, HERO_HTML, make_theme
+from src.ui_theme import CSS, HEAD, HERO_HTML, make_theme, side_gallery_html
 
 
 EXAMPLE_PROMPTS = [
@@ -40,10 +40,6 @@ def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
         return None, None, "", [], [], {}, {}
     except Exception as error:
         raise gr.Error(f"Image generation failed: {error}") from error
-
-    if result.get("ip_warning"):
-        gr.Warning(result["ip_warning"])
-        return None, None, "", [], [], {}, {}
 
     tier_settings = TIERS[result["tier_used"]]
     model_config = result.get("config", tier_settings["config"])
@@ -120,70 +116,97 @@ with gr.Blocks(
     title="Flicker",
     **({} if launch_supports_css else theme_options),
 ) as demo:
-    gr.HTML(HERO_HTML)
-    with gr.Row():
-        prompt = gr.Textbox(
-            label="Prompt",
-            placeholder="Describe the image you want to create...",
-            lines=2,
-        )
-        tier = gr.Dropdown(
-            choices=["Auto", "Max", "High", "Medium", "Low"],
-            value="Auto",
-            label="Generation tier",
-        )
-    with gr.Row():
-        postprocess = gr.Checkbox(value=True, label="Post-process output")
-        enhance = gr.Checkbox(value=True, label="Prompt enhancement")
-        candidate_count = gr.Dropdown(
-            choices=["Auto", "1", "2", "3", "4"],
-            value="Auto",
-            label="Candidates",
-        )
-        seed = gr.Number(value=42, precision=0, label="Seed")
-        generate_button = gr.Button(
-            "Generate",
-            variant="primary",
-            elem_id="flicker-generate",
-        )
+    with gr.Row(equal_height=False, elem_id="flicker-shell"):
+        with gr.Column(scale=1, min_width=180):
+            gr.HTML(side_gallery_html("left"))
 
-    gr.Examples(
-        examples=[[example] for example in EXAMPLE_PROMPTS],
-        inputs=prompt,
-        label="Example prompts",
-    )
+        with gr.Column(scale=4):
+            gr.HTML(HERO_HTML)
+            with gr.Row(equal_height=False):
+                with gr.Column(scale=2):
+                    prompt = gr.Textbox(
+                        label="Prompt",
+                        placeholder="Describe the image you want to create...",
+                        lines=4,
+                    )
+                    generate_button = gr.Button(
+                        "Generate",
+                        variant="primary",
+                        elem_id="flicker-generate",
+                    )
+                    gr.Examples(
+                        examples=[[example] for example in EXAMPLE_PROMPTS],
+                        inputs=prompt,
+                        label="A little inspiration",
+                        examples_per_page=4,
+                    )
 
-    with gr.Row():
-        raw_output = gr.Image(label="Raw image", type="pil")
-        final_output = gr.Image(label="Final image", type="pil")
+                with gr.Column(scale=3):
+                    raw_output = gr.Image(label="Generated output", type="pil")
+                    final_output = gr.Image(label="Final image", type="pil")
 
-    info_output = gr.Markdown(label="Generation information")
-    intermediate_output = gr.Gallery(
-        label="Processing intermediates",
-        columns=3,
-        height="auto",
-    )
-    candidate_output = gr.Gallery(
-        label="Candidates",
-        columns=4,
-        height=240,
-    )
-    quality_output = gr.JSON(label="Quality and artifact report")
-    controller_output = gr.JSON(label="Controller decisions")
+            with gr.Accordion("Advanced settings", open=False):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        postprocess = gr.Checkbox(value=True, label="Post-process output")
+                    with gr.Column(scale=1):
+                        enhance = gr.Checkbox(value=True, label="Prompt enhancement")
+                with gr.Row(equal_height=False):
+                    candidate_count = gr.Dropdown(
+                        choices=["Auto", "1", "2", "3", "4"],
+                        value="Auto",
+                        label="Candidates",
+                    )
+                    tier = gr.Dropdown(
+                        choices=["Auto", "Max", "High", "Medium", "Low"],
+                        value="Auto",
+                        label="Generation tier",
+                    )
+                    seed = gr.Number(value=42, precision=0, label="Seed")
 
-    generate_button.click(
-        fn=generate,
-        inputs=[prompt, tier, postprocess, enhance, candidate_count, seed],
-        outputs=[
-            raw_output,
-            final_output,
-            info_output,
-            intermediate_output,
-            candidate_output,
-            quality_output,
-            controller_output,
-        ],
-    )
+            info_output = gr.Markdown(label="Generation information")
+            intermediate_output = gr.Gallery(
+                label="Processing intermediates",
+                columns=3,
+                height="auto",
+            )
+            candidate_output = gr.Gallery(
+                label="Candidates",
+                columns=4,
+                height=240,
+            )
+            quality_output = gr.JSON(label="Quality and artifact report")
+            controller_output = gr.JSON(label="Controller decisions")
+
+            generate_button.click(
+                fn=generate,
+                inputs=[prompt, tier, postprocess, enhance, candidate_count, seed],
+                outputs=[
+                    raw_output,
+                    final_output,
+                    info_output,
+                    intermediate_output,
+                    candidate_output,
+                    quality_output,
+                    controller_output,
+                ],
+            )
+
+        with gr.Column(scale=1, min_width=180):
+            gr.HTML(side_gallery_html("right"))
+
+
+def _pick_server_port(start_port=7860, max_tries=20):
+    import socket
+
+    for port in range(start_port, start_port + max_tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return start_port
 
 
 if __name__ == "__main__":
@@ -192,9 +215,19 @@ if __name__ == "__main__":
         if "css" in inspect.signature(demo.launch).parameters
         else {}
     )
+    requested_port = os.environ.get("GRADIO_SERVER_PORT") or os.environ.get("PORT")
+    server_port = int(requested_port) if requested_port else _pick_server_port()
+    if requested_port:
+        try:
+            from socket import socket
+
+            with socket() as s:
+                s.bind(("127.0.0.1", int(requested_port)))
+        except OSError:
+            server_port = _pick_server_port(int(requested_port))
     demo.queue().launch(
         **launch_options,
         server_name=os.getenv("HOST", "127.0.0.1"),
-        server_port=int(os.environ.get("PORT", "7860")),
+        server_port=server_port,
         share=os.environ.get("SHARE") == "1",
     )

@@ -30,19 +30,43 @@ FONTS = (
     '&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">'
 )
 
+"""Visual layer for LiteGen and the OPAL GARDEN design system.
+
+The interface keeps the existing Gradio generation flow while swapping in a warm,
+editorial, botanical palette with a fixed photographic mosaic background.
+
+Exports:
+    HEAD        -> fonts, pass as head=
+    CSS         -> page styles, pass as css=
+    HERO_HTML   -> branded hero + fixed local mosaic, render with gr.HTML(HERO_HTML)
+    make_theme()-> Gradio theme override, pass as theme=
+The Generate button must keep elem_id="flicker-generate" for callback compatibility.
+"""
+
+import base64
+import io
+import os
+
+FONTS = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">'
+)
+
 # ---------------------------------------------------------------------------
-# Optional gallery mosaic
+# Fixed mosaic from local gallery assets
 # ---------------------------------------------------------------------------
 GALLERY_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "gallery"
 )
 
-# (column span, row span) pattern for an asymmetric editorial grid
-_SPANS = [(2, 2), (1, 1), (1, 2), (2, 1), (1, 1), (1, 2),
-          (2, 2), (1, 1), (2, 1), (1, 1), (1, 2), (1, 1)]
+_SPANS = [
+    (2, 2), (1, 1), (1, 2), (2, 1), (1, 1), (1, 2),
+    (2, 2), (1, 1), (2, 1), (1, 1), (1, 2), (1, 1),
+]
 
 
-def _thumb_data_uri(path, max_side=480):
+def _thumb_data_uri(path, max_side=720):
     from PIL import Image
 
     with Image.open(path) as im:
@@ -54,7 +78,7 @@ def _thumb_data_uri(path, max_side=480):
 
 
 def mosaic_html(max_images=14):
-    """Build the mosaic markup from assets/gallery; returns "" if there are no images."""
+    """Build a fixed local-image mosaic from assets/gallery."""
     if not os.path.isdir(GALLERY_DIR):
         return ""
     files = sorted(
@@ -69,472 +93,729 @@ def mosaic_html(max_images=14):
             continue
     if not uris:
         return ""
+
     tiles = []
-    for i in range(max(24, len(uris) * 2)):
+    for i in range(max(18, len(uris) * 2)):
         cs, rs = _SPANS[i % len(_SPANS)]
         tiles.append(
-            f'<div class="flicker-tile" style="grid-column:span {cs};grid-row:span {rs}">'
+            f'<div class="opal-tile" style="grid-column:span {cs};grid-row:span {rs};">'
             f'<img src="{uris[i % len(uris)]}" alt="" loading="lazy" decoding="async"></div>'
         )
-    return '<div id="flicker-mosaic" aria-hidden="true">' + "".join(tiles) + "</div>"
+    return '<div id="opal-mosaic" aria-hidden="true">' + "".join(tiles) + "</div>"
+
+
+def side_gallery_html(side="left"):
+    """Build static side image columns from the local gallery."""
+    if not os.path.isdir(GALLERY_DIR):
+        return ""
+    files = sorted(
+        f for f in os.listdir(GALLERY_DIR)
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    )
+    if not files:
+        return ""
+    uris = []
+    for f in files:
+        try:
+            uris.append(_thumb_data_uri(os.path.join(GALLERY_DIR, f)))
+        except Exception:
+            continue
+    if not uris:
+        return ""
+
+    selected = uris[:10]
+    if side == "left":
+        markup = [
+            '<div class="flicker-side-gallery left" aria-hidden="true">',
+            f'<div class="side-tile tall"><img src="{selected[0]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 0 else '',
+            f'<div class="side-tile"><img src="{selected[1]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 1 else '',
+            f'<div class="side-tile"><img src="{selected[2]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 2 else '',
+            f'<div class="side-tile"><img src="{selected[3]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 3 else '',
+            f'<div class="side-tile wide"><img src="{selected[4]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 4 else '',
+            '</div>'
+        ]
+    else:
+        markup = [
+            '<div class="flicker-side-gallery right" aria-hidden="true">',
+            f'<div class="side-tile"><img src="{selected[5]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 5 else '',
+            f'<div class="side-tile tall"><img src="{selected[6]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 6 else '',
+            f'<div class="side-tile"><img src="{selected[7]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 7 else '',
+            f'<div class="side-tile wide"><img src="{selected[8]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 8 else '',
+            f'<div class="side-tile"><img src="{selected[9]}" alt="" loading="lazy" decoding="async"></div>' if len(selected) > 9 else '',
+            '</div>'
+        ]
+    return ''.join(markup)
 
 
 MOSAIC = mosaic_html()
+HEAD = FONTS
 
-# ---------------------------------------------------------------------------
-# Background script: butterflies + fireflies
-# ---------------------------------------------------------------------------
-SCRIPT = r"""
-<script>
-(function () {
-  function start() {
-    if (document.getElementById('flicker-bg')) return;
-    document.documentElement.classList.add('dark');
-    if (document.body) document.body.classList.add('dark');
-
-    var MOSAIC = __MOSAIC__;
-    var hasMosaic = !!MOSAIC;
-    if (hasMosaic) {
-      var holder = document.createElement('div');
-      holder.innerHTML = MOSAIC;
-      document.body.prepend(holder.firstChild);
-      document.body.classList.add('flicker-has-mosaic');
-    }
-
-    var c = document.createElement('canvas');
-    c.id = 'flicker-bg';
-    c.setAttribute('aria-hidden', 'true');
-    document.body.prepend(c);
-    var ctx = c.getContext('2d');
-    var sky = document.createElement('canvas');
-    var sctx = sky.getContext('2d');
-
-    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var small = window.innerWidth < 768;
-    var w = 0, h = 0, dpr = 1, t = 0;
-
-    // palette: moonlit cyan, honey gold, lilac, mint
-    var WING = ['89,227,255', '255,201,92', '169,144,255', '111,242,194'];
-    var FIRE = ['255,214,120', '150,236,255', '255,240,200'];
-
-    function rand(a, b) { return a + Math.random() * (b - a); }
-
-    var flies = [], bugs = [];
-    var burst = 0, bx = 0, by = 0;
-
-    function makeFlies() {
-      flies = [];
-      var n = small ? 7 : 14;
-      for (var i = 0; i < n; i++) {
-        flies.push({
-          x: rand(0, w), y: rand(0, h), ang: rand(0, Math.PI * 2),
-          speed: rand(0.45, 0.95), size: rand(small ? 9 : 10, small ? 15 : 22),
-          phase: rand(0, 6.28), flap: rand(0.16, 0.26),
-          w1: rand(0.004, 0.009), w2: rand(0.011, 0.02), o: rand(0, 100),
-          col: WING[i % WING.length], trail: []
-        });
-      }
-      bugs = [];
-      var m = small ? 34 : 70;
-      for (var j = 0; j < m; j++) {
-        bugs.push({
-          x: rand(0, w), y: rand(0, h), vx: rand(-0.15, 0.15), vy: rand(-0.12, 0.12),
-          r: rand(0.8, 2.0), tw: rand(0.01, 0.035), o: rand(0, 100),
-          col: FIRE[j % FIRE.length]
-        });
-      }
-    }
-
-    function paintSky() {
-      sky.width = w; sky.height = h;
-      sctx.fillStyle = '#060a12';
-      sctx.fillRect(0, 0, w, h);
-      var g1 = sctx.createRadialGradient(w * 0.15, h * 0.1, 0, w * 0.15, h * 0.1, Math.max(w, h) * 0.7);
-      g1.addColorStop(0, 'rgba(70,52,140,0.45)');
-      g1.addColorStop(1, 'rgba(70,52,140,0)');
-      sctx.fillStyle = g1; sctx.fillRect(0, 0, w, h);
-      var g2 = sctx.createRadialGradient(w * 0.85, h * 0.9, 0, w * 0.85, h * 0.9, Math.max(w, h) * 0.6);
-      g2.addColorStop(0, 'rgba(20,110,130,0.35)');
-      g2.addColorStop(1, 'rgba(20,110,130,0)');
-      sctx.fillStyle = g2; sctx.fillRect(0, 0, w, h);
-    }
-
-    function resize() {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = c.width = Math.floor(window.innerWidth * dpr);
-      h = c.height = Math.floor(window.innerHeight * dpr);
-      c.style.width = window.innerWidth + 'px';
-      c.style.height = window.innerHeight + 'px';
-      if (!hasMosaic) paintSky();
-      makeFlies();
-      if (reduce) draw(true);
-    }
-
-    function wing(s) {
-      // upper lobe
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(s * 0.2, -s * 1.15, s * 1.35, -s * 1.05, s * 1.05, -s * 0.15);
-      ctx.bezierCurveTo(s * 0.9, 0, s * 0.3, 0.02 * s, 0, 0);
-      ctx.fill();
-      // lower lobe
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(s * 0.7, s * 0.1, s * 0.95, s * 0.8, s * 0.48, s * 0.88);
-      ctx.bezierCurveTo(s * 0.22, s * 0.92, s * 0.05, s * 0.42, 0, 0);
-      ctx.fill();
-    }
-
-    function drawFly(f, still) {
-      // trail of light behind it
-      for (var i = 0; i < f.trail.length; i++) {
-        var p = f.trail[i];
-        var a = (i / f.trail.length) * 0.28;
-        ctx.fillStyle = 'rgba(' + f.col + ',' + a + ')';
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], 1.3 * dpr, 0, 6.283);
-        ctx.fill();
-      }
-      var s = f.size * dpr;
-      var open = still ? 1 : 0.22 + 0.78 * Math.abs(Math.cos(f.phase));
-      ctx.save();
-      ctx.translate(f.x, f.y);
-      ctx.rotate(f.ang + Math.PI / 2);
-      ctx.shadowColor = 'rgba(' + f.col + ',0.95)';
-      ctx.shadowBlur = 16 * dpr;
-      ctx.fillStyle = 'rgba(' + f.col + ',0.82)';
-      ctx.save(); ctx.scale(open, 1); wing(s); ctx.restore();
-      ctx.save(); ctx.scale(-open, 1); wing(s); ctx.restore();
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath();
-      ctx.ellipse(0, 0, s * 0.07, s * 0.42, 0, 0, 6.283);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    function moveFly(f) {
-      f.ang += Math.sin(t * f.w1 + f.o) * 0.014 + Math.sin(t * f.w2 + f.o * 2) * 0.01;
-      if (burst > 0.02) {
-        var away = Math.atan2(f.y - by, f.x - bx);
-        var d = away - f.ang;
-        d = Math.atan2(Math.sin(d), Math.cos(d));
-        f.ang += d * 0.08 * burst;
-      }
-      var spd = f.speed * (1 + burst * 4) * dpr;
-      f.x += Math.cos(f.ang) * spd;
-      f.y += Math.sin(f.ang) * spd + Math.sin(f.phase) * 0.25 * dpr;
-      f.phase += f.flap * (1 + burst * 1.8);
-      var m = 40 * dpr;
-      if (f.x < -m) f.x = w + m; else if (f.x > w + m) f.x = -m;
-      if (f.y < -m) f.y = h + m; else if (f.y > h + m) f.y = -m;
-      f.trail.push([f.x, f.y]);
-      if (f.trail.length > 24) f.trail.shift();
-    }
-
-    function drawBug(b, still) {
-      if (!still) {
-        b.x += b.vx * dpr; b.y += b.vy * dpr;
-        b.vx += rand(-0.01, 0.01); b.vy += rand(-0.01, 0.01);
-        b.vx = Math.max(-0.25, Math.min(0.25, b.vx));
-        b.vy = Math.max(-0.2, Math.min(0.2, b.vy));
-        if (b.x < 0) b.x = w; else if (b.x > w) b.x = 0;
-        if (b.y < 0) b.y = h; else if (b.y > h) b.y = 0;
-      }
-      var a = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(t * b.tw + b.o));
-      a = Math.min(1, a * (1 + burst * 0.8));
-      var r = b.r * dpr;
-      var g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r * 6);
-      g.addColorStop(0, 'rgba(' + b.col + ',' + (a * 0.35) + ')');
-      g.addColorStop(1, 'rgba(' + b.col + ',0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(b.x, b.y, r * 6, 0, 6.283); ctx.fill();
-      ctx.fillStyle = 'rgba(' + b.col + ',' + a + ')';
-      ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.283); ctx.fill();
-    }
-
-    function draw(still) {
-      if (hasMosaic) ctx.clearRect(0, 0, w, h);
-      else ctx.drawImage(sky, 0, 0);
-      ctx.globalCompositeOperation = 'lighter';
-      bugs.forEach(function (b) { drawBug(b, still); });
-      flies.forEach(function (f) { if (!still) moveFly(f); drawFly(f, still); });
-      ctx.globalCompositeOperation = 'source-over';
-    }
-
-    function frame() {
-      t += 1;
-      draw(false);
-      burst = burst * 0.97;
-      requestAnimationFrame(frame);
-    }
-
-    window.addEventListener('click', function (e) {
-      var btn = e.target && e.target.closest && e.target.closest('#flicker-generate');
-      if (btn) { burst = 1; bx = e.clientX * dpr; by = e.clientY * dpr; }
-    }, true);
-    window.addEventListener('resize', resize);
-
-    resize();
-    if (!reduce) requestAnimationFrame(frame);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start);
-  } else {
-    start();
-  }
-})();
-</script>
-"""
-
-HEAD = FONTS + SCRIPT.replace("__MOSAIC__", json.dumps(MOSAIC))
-
-# ---------------------------------------------------------------------------
-# Styles
-# ---------------------------------------------------------------------------
 CSS = r"""
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
 :root {
-  --night: #060a12;
-  --panel: rgba(10, 16, 30, 0.55);
-  --panel-strong: rgba(6, 10, 18, 0.80);
-  --line: rgba(200, 225, 255, 0.12);
-  --text: #eaf2ff;
-  --muted: #93a6c2;
-  --gold: #ffc95c;
-  --cyan: #59e3ff;
-  --lilac: #a990ff;
+  --page-bg: #7d5f56;
+  --page-bg-deep: #684d46;
+  --surface: rgba(255, 249, 244, 0.72);
+  --surface-soft: rgba(255,255,255,0.14);
+  --surface-strong: rgba(255,255,255,0.2);
+  --border: rgba(118, 87, 107, 0.16);
+  --border-strong: rgba(118, 87, 107, 0.22);
+  --text: #2f201d;
+  --text-primary: #2f201d;
+  --text-secondary: #4a362f;
+  --text-muted: #5b463f;
+  --text-soft: rgba(47, 32, 29, 0.76);
+  --text-muted-soft: rgba(47, 32, 29, 0.58);
+  --warm-cream: #fff6ee;
+  --warm-cream-soft: rgba(255,246,238,0.74);
+  --peach: #eab5a3;
+  --apricot: #f3cc8e;
+  --rose: #d89ca2;
+  --shadow: rgba(57, 39, 33, 0.12);
+  --input-bg: rgba(255,255,255,0.18);
+  --input-border: rgba(255,255,255,0.18);
 }
 
-html, body { background: var(--night) !important; }
+html, body {
+  background: linear-gradient(135deg, #826860 0%, #735c53 30%, #5c4742 100%) !important;
+  color: var(--text) !important;
+}
 
-#flicker-bg {
+body {
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: "";
   position: fixed;
   inset: 0;
-  z-index: 1;
   pointer-events: none;
+  opacity: 0.08;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 18px 18px;
 }
 
-/* Optional gallery mosaic, sits under the butterflies */
-#flicker-mosaic {
-  position: fixed;
-  inset: 0;
+#flicker-shell {
+  display: grid !important;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(0, 4.4fr) minmax(120px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+  width: min(100%, 1280px);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+#flicker-shell > div {
+  min-width: 0;
+  width: 100%;
+}
+
+#opal-mosaic {
+  position: relative;
   z-index: 0;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  grid-auto-rows: 17vh;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: minmax(80px, 11.5vh);
   grid-auto-flow: dense;
-  gap: 4px;
-  padding: 4px;
-  background: #0b0f18;
+  gap: 8px;
+  padding: 10px;
+  width: min(100%, 1200px);
+  height: clamp(350px, 42vh, 470px);
+  margin: 6px auto 0;
+  border-radius: 28px;
   overflow: hidden;
   pointer-events: none;
+  background: rgba(255, 248, 242, 0.12);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 28px 52px rgba(51, 35, 31, 0.15), 0 0 0 1px rgba(255,255,255,0.04);
 }
-.flicker-tile { overflow: hidden; border-radius: 2px; background: #111726; }
-.flicker-tile img {
+
+#opal-mosaic::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(74,56,52,0.20) 0%, rgba(74,56,52,0.08) 34%, rgba(74,56,52,0.04) 100%);
+}
+
+.opal-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 14px 30px rgba(38, 27, 23, 0.14);
+  background: rgba(255,255,255,0.08);
+}
+
+.opal-tile img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
-  animation: flicker-drift 40s ease-in-out infinite alternate;
-}
-.flicker-tile:nth-child(3n) img { animation-duration: 52s; animation-delay: -12s; }
-.flicker-tile:nth-child(4n) img { animation-duration: 46s; animation-delay: -24s; }
-@keyframes flicker-drift {
-  from { transform: scale(1.02); }
-  to { transform: scale(1.12); }
-}
-#flicker-mosaic::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background:
-    linear-gradient(90deg, rgba(6,10,18,0.88) 0%, rgba(6,10,18,0.70) 55%, rgba(6,10,18,0.38) 100%),
-    linear-gradient(180deg, rgba(6,10,18,0.15) 0%, rgba(6,10,18,0.55) 100%);
-}
-body.flicker-has-mosaic .gradio-container .block,
-body.flicker-has-mosaic .gradio-container .form,
-body.flicker-has-mosaic .gradio-container .panel {
-  background: rgba(8, 12, 22, 0.74) !important;
+  transform: scale(1.02);
+  filter: saturate(0.85) contrast(1.06) brightness(0.98);
 }
 
-gradio-app, .gradio-container, .gradio-container .main, .gradio-container .contain {
+.flicker-side-gallery {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(90px, 1fr);
+  gap: 10px;
+  width: 100%;
+  max-width: 210px;
+  margin: 0 auto;
+  align-content: start;
+  padding-top: 8px;
+  opacity: 0.92;
+}
+
+.flicker-side-gallery .side-tile {
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 10px 22px rgba(46, 33, 29, 0.12);
+  background: rgba(255,255,255,0.08);
+  max-width: 100%;
+}
+
+.flicker-side-gallery .side-tile.tall { grid-row: span 2; }
+.flicker-side-gallery .side-tile.wide { grid-column: span 2; }
+
+.flicker-side-gallery .side-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: saturate(0.86) contrast(1.05) brightness(0.96);
+}
+
+.gradio-container,
+.gradio-app, .gradio-container .main, .gradio-container .contain {
   background: transparent !important;
 }
 
 .gradio-container {
   position: relative;
   z-index: 2;
-  max-width: 1180px !important;
-  font-family: 'Manrope', system-ui, sans-serif !important;
+  max-width: 1500px !important;
+  padding: 12px 18px 32px !important;
+  font-family: 'Inter', sans-serif !important;
   color: var(--text) !important;
 }
 
-/* Header */
-.flicker-hero { padding: 56px 4px 28px; max-width: 760px; }
-.flicker-title {
-  font-family: 'Syne', sans-serif;
-  font-weight: 800;
-  font-size: clamp(64px, 11vw, 148px);
-  line-height: 0.9;
-  letter-spacing: -0.045em;
-  margin: 0;
-  color: var(--text);
-  text-shadow: 0 0 28px rgba(89, 227, 255, 0.25);
-  animation: flicker-on 1.4s steps(1, end) 1 both;
+.gradio-container .row {
+  gap: 18px !important;
+  margin-top: 0 !important;
+  align-items: stretch !important;
 }
-@keyframes flicker-on {
-  0% { opacity: 0; }
-  8% { opacity: 0.9; }
-  12% { opacity: 0.1; }
-  20% { opacity: 1; }
-  26% { opacity: 0.25; }
-  34%, 100% { opacity: 1; }
-}
-.flicker-tagline {
-  font-size: clamp(18px, 2.2vw, 24px);
-  line-height: 1.45;
-  color: var(--text);
-  margin: 20px 0 10px;
-  max-width: 34ch;
-}
-.flicker-facts {
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.65;
-  max-width: 58ch;
-  margin: 0;
-}
-.flicker-team { color: var(--muted); font-size: 14px; margin: 22px 0 0; }
 
-/* Panels: frosted glass over the night sky */
+.gradio-container .form {
+  padding: 0 !important;
+}
+
 .gradio-container .block,
 .gradio-container .form,
-.gradio-container .panel {
-  background: var(--panel) !important;
-  border: 1px solid var(--line) !important;
-  border-radius: 16px !important;
-  backdrop-filter: blur(14px) saturate(1.15);
-  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+.gradio-container .panel,
+.gradio-container .accordion {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 18px 30px rgba(47, 35, 31, 0.12) !important;
+  backdrop-filter: blur(20px) saturate(1.08);
+  -webkit-backdrop-filter: blur(20px) saturate(1.08);
 }
-.gradio-container .form .block { background: transparent !important; border: none !important; }
+
+.gradio-container .block {
+  padding: 18px 18px 14px !important;
+}
+
+.gradio-container .form .block,
+.gradio-container .accordion .block,
+.gradio-container .accordion .panel {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.opal-header {
+  position: relative;
+  z-index: 2;
+  max-width: 1200px;
+  margin: 8px auto 12px;
+  padding: 24px 16px 8px;
+  text-align: center;
+}
+
+.opal-header::before {
+  content: "";
+  position: absolute;
+  inset: 10% 18% 8% 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.16) 0%, rgba(233, 161, 168, 0.12) 32%, transparent 72%);
+  filter: blur(26px);
+  pointer-events: none;
+}
+
+.opal-header .eyebrow {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  color: #f4d2b4;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.opal-header h1 {
+  position: relative;
+  margin: 0;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-weight: 700;
+  font-size: clamp(54px, 7vw, 120px);
+  line-height: 0.84;
+  letter-spacing: -0.05em;
+  color: #f9f0ea;
+  text-shadow: 0 0 14px rgba(255,255,255,0.16), 0 0 30px rgba(247, 240, 232, 0.18), 0 0 42px rgba(201, 142, 120, 0.12);
+}
+
+.opal-header .subtitle {
+  position: relative;
+  margin: 10px auto 0;
+  max-width: 660px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(247, 240, 232, 0.8);
+}
 
 .gradio-container textarea,
 .gradio-container input:not([type="checkbox"]):not([type="radio"]),
 .gradio-container select {
-  background: var(--panel-strong) !important;
-  color: var(--text) !important;
-  border: 1px solid var(--line) !important;
-  border-radius: 10px !important;
-  font-family: 'Manrope', system-ui, sans-serif !important;
+  background: rgba(255,255,255,0.24) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid rgba(122, 97, 90, 0.32) !important;
+  border-radius: 12px !important;
+  font-family: 'Inter', sans-serif !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
-.gradio-container textarea { font-size: 17px !important; line-height: 1.5 !important; }
+
+.gradio-container textarea {
+  min-height: 144px !important;
+  padding: 16px 14px !important;
+  font-size: 17px !important;
+  line-height: 1.5 !important;
+  color: var(--text-primary) !important;
+}
+
+.gradio-container textarea::selection,
+.gradio-container input::selection,
+.gradio-container select::selection {
+  background: rgba(233, 161, 168, 0.35);
+  color: #2f201d;
+}
+
+.gradio-container input::placeholder,
+.gradio-container textarea::placeholder {
+  color: rgba(47, 32, 29, 0.8) !important;
+  text-shadow: none !important;
+}
+
+.gradio-container textarea:focus,
+.gradio-container input:focus,
+.gradio-container select:focus {
+  border-color: rgba(233, 161, 168, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(233, 161, 168, 0.16), 0 0 18px rgba(233, 161, 168, 0.08) !important;
+  outline: none !important;
+}
 
 .gradio-container label,
 .gradio-container .label-wrap,
-.gradio-container span[data-testid="block-info"] {
-  color: var(--muted) !important;
-  font-weight: 500 !important;
+.gradio-container span[data-testid="block-info"],
+.gradio-container .checkbox-container,
+.gradio-container .markdown,
+.gradio-container .markdown p,
+.gradio-container .markdown li,
+.gradio-container .json,
+.gradio-container .gr-textbox,
+.gradio-container .gr-dropdown,
+.gradio-container .gr-number {
+  color: var(--text-primary) !important;
+  font-weight: 600 !important;
 }
 
-/* Checkboxes: keep the checked state visible */
-.gradio-container input[type="checkbox"],
-.gradio-container input[type="radio"] {
-  accent-color: var(--gold);
-  width: 18px; height: 18px;
-}
-.gradio-container input[type="checkbox"]:checked,
-.gradio-container input[type="radio"]:checked {
-  background-color: var(--gold) !important;
-  border-color: var(--gold) !important;
+.gradio-container .checkbox-container label,
+.gradio-container .checkbox-container span,
+.gradio-container .checkbox-container * {
+  color: var(--text-primary) !important;
 }
 
-/* Generate button: warm gold against the cool night */
 #flicker-generate, .gradio-container button.primary {
-  background: var(--gold) !important;
-  color: #1a1206 !important;
+  width: 100%;
+  background: linear-gradient(135deg, #eec6b5 0%, #f1d29c 100%) !important;
+  color: #352726 !important;
   border: none !important;
-  border-radius: 12px !important;
-  font-family: 'Syne', sans-serif !important;
-  font-weight: 700 !important;
-  font-size: 18px !important;
-  letter-spacing: -0.01em;
-  box-shadow: 0 0 24px rgba(255, 201, 92, 0.35);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
-}
-#flicker-generate:hover, .gradio-container button.primary:hover {
-  background: #ffd780 !important;
-  box-shadow: 0 0 34px rgba(255, 201, 92, 0.55);
+  border-radius: 14px !important;
+  font-weight: 800 !important;
+  font-size: 16px !important;
+  letter-spacing: 0.01em;
+  box-shadow: 0 16px 28px rgba(77, 58, 49, 0.2), 0 0 18px rgba(241, 210, 156, 0.18);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
 }
 
-.gradio-container button.secondary {
-  background: transparent !important;
-  color: var(--text) !important;
-  border: 1px solid var(--line) !important;
+#flicker-generate:hover, .gradio-container button.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 30px rgba(77, 58, 49, 0.26), 0 0 22px rgba(241, 210, 156, 0.2);
+  filter: saturate(1.02) brightness(1.02);
+}
+
+#flicker-generate:active, .gradio-container button.primary:active {
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+.gradio-container .examples,
+.gradio-container .example-set,
+.gradio-container .example-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gradio-container .example-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 8px 14px !important;
+  border: 1px solid rgba(118, 87, 107, 0.18) !important;
+  background: rgba(255,255,255,0.18) !important;
+  color: var(--text-primary) !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  line-height: 1.3 !important;
+  font-weight: 700 !important;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  text-shadow: 0 0 8px rgba(246, 214, 175, 0.08);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.gradio-container .example-item:hover {
+  border-color: rgba(133, 101, 88, 0.7) !important;
+  background: rgba(255,255,255,0.28) !important;
+  color: var(--text-primary) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 0 18px rgba(243, 204, 142, 0.14);
+  text-shadow: 0 0 10px rgba(243, 204, 142, 0.1), 0 0 12px rgba(233, 161, 168, 0.04);
+}
+
+.gradio-container .accordion {
+  border: 1px solid var(--border) !important;
+  background: rgba(255,255,255,0.08) !important;
+}
+
+.gradio-container .progress {
+  background: rgba(255,255,255,0.1) !important;
   border-radius: 999px !important;
 }
-.gradio-container button.secondary:hover { border-color: var(--cyan) !important; }
 
-/* Keyboard focus */
-.gradio-container :focus-visible {
-  outline: 2px solid var(--cyan) !important;
-  outline-offset: 2px !important;
+.gradio-container .progress-bar {
+  background: linear-gradient(135deg, #eab6ac 0%, #f1d09d 100%) !important;
+  border-radius: 999px !important;
 }
 
-.gradio-container .image-container img,
-.gradio-container .grid-wrap img { border-radius: 12px; }
+.gradio-container ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
 
-footer { opacity: 0.45; }
+.gradio-container ::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 999px;
+}
+
+.gradio-container ::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.04);
+}
+
+footer,
+.gradio-container footer,
+.gradio-footer,
+.footer {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+@media (max-width: 1100px) {
+  #flicker-shell {
+    grid-template-columns: minmax(120px, 0.7fr) minmax(0, 2.2fr) minmax(120px, 0.7fr);
+  }
+}
+
+@media (max-width: 900px) {
+  #flicker-shell {
+    grid-template-columns: 1fr;
+    width: 100%;
+    max-width: 100%;
+    gap: 14px;
+  }
+
+  .flicker-side-gallery {
+    display: none !important;
+  }
+
+  .gradio-container {
+    padding: 8px 12px 24px !important;
+    max-width: 100% !important;
+  }
+
+  .gradio-container .row {
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+
+  #opal-mosaic {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-rows: minmax(72px, 14vh);
+    gap: 6px;
+    padding: 8px;
+    width: 100%;
+    height: clamp(220px, 26vw, 320px);
+    border-radius: 22px;
+  }
+
+  .opal-header {
+    padding: 18px 8px 8px;
+  }
+
+  .opal-header h1 {
+    font-size: clamp(42px, 12vw, 72px);
+  }
+
+  .opal-header .subtitle {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+}
 
 @media (max-width: 768px) {
-  #flicker-mosaic { grid-template-columns: repeat(3, 1fr); grid-auto-rows: 20vh; }
-  #flicker-mosaic::after { background: rgba(6,10,18,0.78); }
-  .flicker-hero { padding: 32px 0 16px; }
-  .gradio-container { padding: 0 12px !important; }
+  html, body {
+    overflow-x: hidden;
+  }
+
+  .gradio-container {
+    padding: 8px 10px 20px !important;
+  }
+
+  .gradio-container .block {
+    padding: 14px 12px 10px !important;
+  }
+
+  .gradio-container textarea,
+  .gradio-container input:not([type="checkbox"]):not([type="radio"]),
+  .gradio-container select {
+    width: 100% !important;
+    min-height: 48px !important;
+    font-size: 15px !important;
+  }
+
+  .gradio-container textarea {
+    min-height: 120px !important;
+  }
+
+  #flicker-generate, .gradio-container button.primary {
+    min-height: 48px !important;
+    font-size: 15px !important;
+  }
+
+  .gradio-container .example-set,
+  .gradio-container .examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .gradio-container .example-item {
+    flex: 1 1 140px;
+    max-width: none;
+    min-height: 34px;
+    white-space: normal;
+    text-overflow: clip;
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
+  .gradio-container .accordion {
+    width: 100%;
+  }
+
+  .gradio-container .accordion .label-wrap {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .gradio-container .progress,
+  .gradio-container .progress-bar {
+    min-width: 0;
+  }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .flicker-title { animation: none; }
-  .flicker-tile img { animation: none; }
+@media (max-width: 430px) {
+  .gradio-container {
+    padding: 6px 8px 18px !important;
+  }
+
+  .opal-header {
+    padding-top: 10px;
+  }
+
+  .opal-header h1 {
+    font-size: clamp(34px, 14vw, 52px);
+    line-height: 0.9;
+  }
+
+  .opal-header .subtitle {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  #opal-mosaic {
+    height: clamp(180px, 28vw, 220px);
+    border-radius: 18px;
+  }
+
+  .gradio-container .block {
+    border-radius: 16px !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .gradio-container {
+    padding: 4px 6px 16px !important;
+  }
+
+  .gradio-container label,
+  .gradio-container .label-wrap,
+  .gradio-container .checkbox-container,
+  .gradio-container span[data-testid="block-info"] {
+    font-size: 13px !important;
+  }
+
+  .gradio-container .example-item {
+    font-size: 11.5px !important;
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 320px) {
+  .opal-header .subtitle {
+    letter-spacing: 0.04em;
+  }
+
+  .gradio-container textarea,
+  .gradio-container input:not([type="checkbox"]):not([type="radio"]),
+  .gradio-container select {
+    font-size: 14px !important;
+  }
 }
 """
 
-HERO_HTML = """
-<div class="flicker-hero">
-  <h1 class="flicker-title">Flicker</h1>
-  <p class="flicker-tagline">Describe a scene and get an image in about a second.</p>
-  <p class="flicker-facts">Flicker runs Stable Diffusion thirteen times faster than standard
-  settings while keeping about 95% of its prompt alignment, and switches to a lighter model
-  when the device is short on memory.</p>
-  <p class="flicker-team">Built by Team Chaos Theory</p>
+SIDE_GALLERY_LEFT = """
+<div class="flicker-side-gallery left" aria-hidden="true">
+  <div class="side-tile tall"><img src="{left_1}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile"><img src="{left_2}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile"><img src="{left_3}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile"><img src="{left_4}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile wide"><img src="{left_5}" alt="" loading="lazy" decoding="async"></div>
+</div>
+""".format(
+    left_1=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[0])) if os.path.isdir(GALLERY_DIR) and sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]) else '',
+    left_2=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[1])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 1 else '',
+    left_3=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[2])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 2 else '',
+    left_4=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[3])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 3 else '',
+    left_5=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[4])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 4 else '',
+)
+
+SIDE_GALLERY_RIGHT = """
+<div class="flicker-side-gallery right" aria-hidden="true">
+  <div class="side-tile"><img src="{right_1}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile tall"><img src="{right_2}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile"><img src="{right_3}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile wide"><img src="{right_4}" alt="" loading="lazy" decoding="async"></div>
+  <div class="side-tile"><img src="{right_5}" alt="" loading="lazy" decoding="async"></div>
+</div>
+""".format(
+    right_1=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[5])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 5 else '',
+    right_2=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[6])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 6 else '',
+    right_3=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[7])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 7 else '',
+    right_4=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[8])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 8 else '',
+    right_5=_thumb_data_uri(os.path.join(GALLERY_DIR, sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])[9])) if os.path.isdir(GALLERY_DIR) and len(sorted([f for f in os.listdir(GALLERY_DIR) if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))])) > 9 else '',
+)
+
+HERO_HTML = f"""
+{MOSAIC}
+<div class="opal-header">
+  <div class="eyebrow">Flicker</div>
+  <h1>Flicker</h1>
+  <div class="subtitle">Creative prompt studio for cinematic image generation</div>
 </div>
 """
 
 
 def make_theme():
-    """Dark theme matching the CSS; falls back to a plain theme if a key is unsupported."""
+    """Warm editorial theme that preserves Gradio functionality and the OPAL GARDEN palette."""
     import gradio as gr
 
     try:
         return gr.themes.Base(
-            primary_hue="amber",
-            neutral_hue="slate",
-            font=[gr.themes.GoogleFont("Manrope"), "system-ui", "sans-serif"],
+            primary_hue="pink",
+            neutral_hue="stone",
+            font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
         ).set(
-            body_background_fill="transparent",
-            body_background_fill_dark="transparent",
-            body_text_color="#eaf2ff",
-            body_text_color_dark="#eaf2ff",
-            block_background_fill="rgba(10,16,30,0.55)",
-            block_background_fill_dark="rgba(10,16,30,0.55)",
-            block_border_color="rgba(200,225,255,0.12)",
-            block_border_color_dark="rgba(200,225,255,0.12)",
-            input_background_fill="rgba(6,10,18,0.80)",
-            input_background_fill_dark="rgba(6,10,18,0.80)",
-            button_primary_background_fill="#ffc95c",
-            button_primary_background_fill_dark="#ffc95c",
-            button_primary_text_color="#1a1206",
-            button_primary_text_color_dark="#1a1206",
+            body_background_fill="#1C1917",
+            body_background_fill_dark="#1C1917",
+            body_text_color="#F5EDE6",
+            body_text_color_dark="#F5EDE6",
+            body_text_color_subdued="rgba(245, 237, 230, 0.72)",
+            body_text_color_subdued_dark="rgba(245, 237, 230, 0.72)",
+            block_background_fill="rgba(255,255,255,0.05)",
+            block_background_fill_dark="rgba(255,255,255,0.05)",
+            block_border_color="rgba(255,255,255,0.10)",
+            block_border_color_dark="rgba(255,255,255,0.10)",
+            block_border_width="1px",
+            block_radius="20px",
+            block_label_text_color="#F5EDE6",
+            block_label_text_color_dark="#F5EDE6",
+            input_background_fill="rgba(255,255,255,0.07)",
+            input_background_fill_dark="rgba(255,255,255,0.07)",
+            input_border_color="rgba(255,255,255,0.12)",
+            input_border_color_dark="rgba(255,255,255,0.12)",
+            input_radius="12px",
+            checkbox_background_color_selected="#F4C07A",
+            checkbox_background_color_selected_dark="#F4C07A",
+            button_primary_background_fill="#E8A0AC",
+            button_primary_background_fill_dark="#E8A0AC",
+            button_primary_text_color="#2F201D",
+            button_primary_text_color_dark="#2F201D",
+            shadow_drop="0 18px 34px rgba(12,10,10,0.42)",
         )
     except Exception:
         return gr.themes.Base()

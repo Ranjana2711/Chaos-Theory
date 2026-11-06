@@ -154,27 +154,28 @@ CSS = r"""
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --page-bg: #7d5f56;
-  --page-bg-deep: #684d46;
-  --surface: rgba(255, 249, 244, 0.72);
-  --surface-soft: rgba(255,255,255,0.14);
-  --surface-strong: rgba(255,255,255,0.2);
-  --border: rgba(118, 87, 107, 0.16);
-  --border-strong: rgba(118, 87, 107, 0.22);
-  --text: #2f201d;
-  --text-primary: #2f201d;
-  --text-secondary: #4a362f;
-  --text-muted: #5b463f;
-  --text-soft: rgba(47, 32, 29, 0.76);
-  --text-muted-soft: rgba(47, 32, 29, 0.58);
-  --warm-cream: #fff6ee;
-  --warm-cream-soft: rgba(255,246,238,0.74);
-  --peach: #eab5a3;
-  --apricot: #f3cc8e;
-  --rose: #d89ca2;
-  --shadow: rgba(57, 39, 33, 0.12);
-  --input-bg: rgba(255,255,255,0.18);
-  --input-border: rgba(255,255,255,0.18);
+  --page-bg: #641C32;
+  --page-bg-deep: #421222;
+  --surface: rgba(250, 247, 241, 0.94);
+  --surface-soft: rgba(250, 247, 241, 0.12);
+  --surface-strong: rgba(250, 247, 241, 0.2);
+  --border: rgba(100, 28, 50, 0.18);
+  --border-strong: rgba(100, 28, 50, 0.3);
+  --text: #302622;
+  --text-primary: #302622;
+  --text-secondary: #641C32;
+  --text-muted: #68565A;
+  --text-soft: rgba(48, 38, 34, 0.76);
+  --text-muted-soft: rgba(48, 38, 34, 0.58);
+  --warm-cream: #FAF7F1;
+  --warm-cream-soft: rgba(250,247,241,0.74);
+  --peach: #F3C9B5;
+  --apricot: #A3AD91;
+  --rose: #641C32;
+  --shadow: rgba(48, 38, 34, 0.2);
+  --input-bg: rgba(250,247,241,0.9);
+  --input-border: rgba(100,28,50,0.2);
+
 }
 
 html, body {
@@ -736,6 +737,47 @@ footer,
     font-size: 14px !important;
   }
 }
+
+/* FLICKER — glowing interactive buttons */
+
+.gradio-container button {
+  border-radius: 14px !important;
+  transition: all 0.25s ease !important;
+}
+
+#flicker-generate,
+.gradio-container button.primary {
+  background: linear-gradient(
+    135deg,
+    #F3C9B5,
+    #A3AD91
+  ) !important;
+
+  color: #302622 !important;
+  border: 1px solid rgba(243,201,181,0.7) !important;
+
+  box-shadow:
+    0 0 10px rgba(243,201,181,0.35),
+    0 0 25px rgba(100,28,50,0.25),
+    0 8px 22px rgba(48,38,34,0.2) !important;
+}
+
+#flicker-generate:hover,
+.gradio-container button.primary:hover {
+  transform: translateY(-3px) !important;
+
+  box-shadow:
+    0 0 14px rgba(243,201,181,0.65),
+    0 0 32px rgba(163,173,145,0.4),
+    0 12px 28px rgba(48,38,34,0.25) !important;
+}
+
+.gradio-container button:not(.primary):hover {
+  border-color: #F3C9B5 !important;
+  box-shadow: 0 0 14px rgba(243,201,181,0.35) !important;
+  transform: translateY(-2px);
+}
+
 """
 
 SIDE_GALLERY_LEFT = """

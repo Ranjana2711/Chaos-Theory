@@ -120,7 +120,7 @@ def evaluate_config(
 ):
     steps = args.steps if args.steps is not None else DEFAULT_STEPS[config]
     postprocess_tag = "pp" if args.postprocess else "no_pp"
-    run_name = f"{config}_{steps}_{postprocess_tag}"
+    run_name = f"{config}_{steps}_{postprocess_tag}_{args.prompts}"
     run_dir = PROJECT_ROOT / "outputs" / "eval" / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 

@@ -27,8 +27,9 @@ TIERS = {
         "guidance": 7.5,
         "negative_prompt": NEGATIVE_PROMPT,
     },
-    "High": {"config": "fast", "size": 512, "steps": 8},
-    "Medium": {"config": "fast", "size": 512, "steps": 4},
+    # Steps ablation (CLIP): 2 steps 30.83, 4 steps 31.56, 8 steps 30.65.
+    "High": {"config": "fast", "size": 512, "steps": 4},
+    "Medium": {"config": "fast", "size": 512, "steps": 2},
     "Low": {"config": "tiny", "size": 384, "steps": 15},
 }
 

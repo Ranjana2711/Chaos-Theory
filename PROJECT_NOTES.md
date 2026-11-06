@@ -10,7 +10,7 @@ Configs (src/generate.py):
 - tiny: nota-ai/bk-sdm-tiny, fp16, DPMSolverMultistepScheduler, 20 steps (no LCM)
 On CPU always use float32. generate() returns image, latency_s (denoising only), load_time_s, peak_mem_mb.
 
-Tiers (src/adaptive.py): High = fast 512px 8 steps; Medium = fast 512px 4 steps; Low = tiny 384px 15 steps + upscale to 512
+Tiers (src/adaptive.py): Max = fp16 512px 25 steps guidance 7.5; High = fast 512px 4 steps + best-of-N CLIP rerank; Medium = fast 512px 2 steps; Low = tiny 384px 15 steps + upscale to 512 (LCM best at 4 steps per ablation)
 Only one pipeline in GPU memory at a time. Windows-safe: no multiprocessing, num_workers=0.
 
 Done: dataset.py, generate.py, postprocess.py, adaptive.py, evaluate.py, app.py

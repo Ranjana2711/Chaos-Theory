@@ -35,7 +35,7 @@ CONFIGS = {
         "model": "stable-diffusion-v1-5/stable-diffusion-v1-5",
         "dtype": torch.float16,
         "steps": 4,
-        "guidance": 1.0,
+        "guidance": 1.5,
         "scheduler": "lcm",
         "lora": "latent-consistency/lcm-lora-sdv1-5",
     },
@@ -109,7 +109,16 @@ class Generator:
             )
         return prompt
 
-    def generate(self, config, prompt, seed=42, size=512, steps=None):
+    def generate(
+        self,
+        config,
+        prompt,
+        seed=42,
+        size=512,
+        steps=None,
+        negative_prompt=None,
+        guidance=None,
+    ):
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("prompt must not be empty")
@@ -126,6 +135,7 @@ class Generator:
         prompt = self._truncate_prompt(prompt)
         settings = CONFIGS[config]
         actual_steps = settings["steps"] if steps is None else steps
+        actual_guidance = settings["guidance"] if guidance is None else guidance
         generator = torch.Generator(device=self.device).manual_seed(seed)
 
         if self.device.type == "cuda":
@@ -138,7 +148,8 @@ class Generator:
             height=size,
             width=size,
             num_inference_steps=actual_steps,
-            guidance_scale=settings["guidance"],
+            guidance_scale=actual_guidance,
+            negative_prompt=negative_prompt,
             generator=generator,
         )
         if self.device.type == "cuda":

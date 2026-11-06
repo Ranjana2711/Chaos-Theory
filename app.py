@@ -14,7 +14,7 @@ EXAMPLE_PROMPTS = [
 ]
 
 
-def generate(prompt, tier_label, postprocess, seed):
+def generate(prompt, tier_label, postprocess, enhance, seed):
     if not prompt or not prompt.strip():
         gr.Warning("Please enter a prompt before generating.")
         return None, None, "", [], {}, {}
@@ -29,6 +29,7 @@ def generate(prompt, tier_label, postprocess, seed):
             tier=tier,
             seed=int(seed),
             postprocess=postprocess,
+            enhance=enhance,
         )
     except ValueError as error:
         gr.Warning(str(error))
@@ -41,6 +42,7 @@ def generate(prompt, tier_label, postprocess, seed):
         f"**Reason:** {result['reason']}  \n"
         f"**Fallback:** {'Yes' if result['fallback_happened'] else 'No'}  \n"
         f"**Artifact retry:** {'Yes' if result.get('artifact_retry') else 'No'}  \n"
+        f"**Enhanced prompt:** {result['enhanced_prompt']}  \n"
         f"**Generation latency:** {result['latency_s']:.2f} s  \n"
         f"**Load time:** {result['load_time_s']:.2f} s  \n"
         f"**Peak memory:** {result['peak_mem_mb']:.1f} MB"
@@ -86,6 +88,7 @@ with gr.Blocks(title="Chaos Theory — Text-to-Image") as demo:
         )
     with gr.Row():
         postprocess = gr.Checkbox(value=True, label="Post-process output")
+        enhance = gr.Checkbox(value=True, label="Prompt enhancement")
         seed = gr.Number(value=42, precision=0, label="Seed")
         generate_button = gr.Button("Generate", variant="primary")
 
@@ -110,7 +113,7 @@ with gr.Blocks(title="Chaos Theory — Text-to-Image") as demo:
 
     generate_button.click(
         fn=generate,
-        inputs=[prompt, tier, postprocess, seed],
+        inputs=[prompt, tier, postprocess, enhance, seed],
         outputs=[
             raw_output,
             final_output,

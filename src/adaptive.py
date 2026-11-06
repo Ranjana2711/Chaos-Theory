@@ -9,6 +9,7 @@ from PIL import Image
 
 from src.generate import Generator
 from src.prompt_analyzer import analyze_prompt
+from src.prompt_enhancer import enhance_prompt
 from src.postprocess import (
     detect_artifacts,
     lanczos_resize,
@@ -160,16 +161,25 @@ def generate_with_fallback(
     seed=42,
     postprocess=True,
     time_budget_s=10,
+    enhance=True,
 ):
+    original_prompt = prompt
+    if enhance:
+        generation_prompt, negative_prompt, added_terms = enhance_prompt(prompt)
+    else:
+        generation_prompt = prompt
+        negative_prompt = None
+        added_terms = []
+
     if tier == "auto":
-        initial_tier, reason = choose_tier(time_budget_s, prompt)
+        initial_tier, reason = choose_tier(time_budget_s, generation_prompt)
     elif tier in TIERS:
         initial_tier = tier
         reason = f"Requested {tier} tier."
     else:
         raise ValueError(f"Unknown tier {tier!r}; choose 'auto' or one of {tuple(TIERS)}")
 
-    prompt_analysis = analyze_prompt(prompt)
+    prompt_analysis = analyze_prompt(generation_prompt)
     start_index = _TIER_ORDER.index(initial_tier)
     fallback_happened = False
     fallback_reasons = []
@@ -180,10 +190,11 @@ def generate_with_fallback(
         try:
             generated = _GENERATOR.generate(
                 config=settings["config"],
-                prompt=prompt,
+                prompt=generation_prompt,
                 seed=seed,
                 size=settings["size"],
                 steps=settings["steps"],
+                negative_prompt=negative_prompt,
             )
         except (torch.cuda.OutOfMemoryError, RuntimeError) as error:
             if tier_name == _TIER_ORDER[-1]:
@@ -204,10 +215,11 @@ def generate_with_fallback(
         if artifact_retry:
             generated = _GENERATOR.generate(
                 config=settings["config"],
-                prompt=prompt,
+                prompt=generation_prompt,
                 seed=seed + 1,
                 size=settings["size"],
                 steps=settings["steps"],
+                negative_prompt=negative_prompt,
             )
             peak_mem_mb = max(peak_mem_mb, generated["peak_mem_mb"])
             raw_image = generated["image"]
@@ -239,6 +251,9 @@ def generate_with_fallback(
             "load_time_s": generated["load_time_s"],
             "peak_mem_mb": peak_mem_mb,
             "artifact_retry": artifact_retry,
+            "original_prompt": original_prompt,
+            "enhanced_prompt": generation_prompt,
+            "added_terms": added_terms,
             "prompt_analysis": prompt_analysis,
             "resources": profile_resources(),
             "quality_before": quality_before,

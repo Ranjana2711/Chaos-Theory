@@ -10,6 +10,7 @@ USER user
 WORKDIR /home/user/app
 
 ENV HF_HOME=/home/user/.cache/huggingface \
+    HOST=0.0.0.0 \
     PORT=7860 \
     PYTHONUNBUFFERED=1
 

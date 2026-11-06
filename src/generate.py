@@ -1,5 +1,6 @@
 import gc
 import os
+import re
 import time
 import warnings
 from pathlib import Path
@@ -112,6 +113,12 @@ class Generator:
         prompt = prompt.strip()
         if not prompt:
             raise ValueError("prompt must not be empty")
+        if len(prompt) > 500:
+            raise ValueError(
+                "Prompt is too long; please keep it under 500 characters."
+            )
+        if not re.search(r"[A-Za-z0-9]", prompt):
+            raise ValueError("Prompt must contain at least one word.")
 
         load_start = time.perf_counter()
         pipeline = self.load(config)

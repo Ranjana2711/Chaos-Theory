@@ -1,4 +1,5 @@
 import os
+import re
 
 import gradio as gr
 
@@ -16,7 +17,10 @@ EXAMPLE_PROMPTS = [
 def generate(prompt, tier_label, postprocess, seed):
     if not prompt or not prompt.strip():
         gr.Warning("Please enter a prompt before generating.")
-        return None, None, "", [], {}
+        return None, None, "", [], {}, {}
+    if not re.search(r"[A-Za-z0-9]", prompt):
+        gr.Warning("Please enter a descriptive prompt.")
+        return None, None, "", [], {}, {}
 
     tier = "auto" if tier_label == "Auto" else tier_label
     try:
@@ -26,6 +30,9 @@ def generate(prompt, tier_label, postprocess, seed):
             seed=int(seed),
             postprocess=postprocess,
         )
+    except ValueError as error:
+        gr.Warning(str(error))
+        return None, None, "", [], {}, {}
     except Exception as error:
         raise gr.Error(f"Image generation failed: {error}") from error
 
@@ -117,7 +124,7 @@ with gr.Blocks(title="Chaos Theory — Text-to-Image") as demo:
 
 if __name__ == "__main__":
     demo.queue().launch(
-        server_name="0.0.0.0",
+        server_name=os.getenv("HOST", "127.0.0.1"),
         server_port=int(os.environ.get("PORT", "7860")),
         share=os.environ.get("SHARE") == "1",
     )

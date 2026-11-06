@@ -283,28 +283,36 @@ def generate_with_fallback(
     emphasis_weight = 1.3 if animal_subject else 1.4
     emphasis = {term: emphasis_weight for term in weighted_terms} or None
 
+    cpu_concept_grounding = False
     if tier == "auto":
         initial_tier, reason = choose_tier(time_budget_s, generation_prompt)
         if weighted_terms:
             resources = profile_resources()
-            can_use_max = (
-                resources["device_type"] == "cuda"
-                and time_budget_s >= 5
-                and (
-                    resources["free_vram_mb"] * (1024**2)
-                    + torch.cuda.memory_reserved()
-                ) / (1024**3) >= 4.0
-            )
-            max_count = _candidate_count_for_tier("Max", time_budget_s)
-            max_estimate = _CONFIG_LATENCY_ESTIMATES[
-                (TIERS["Max"]["config"], TIERS["Max"]["steps"])
-            ]
-            can_budget_max = max_estimate * max_count <= 0.8 * time_budget_s
-            initial_tier = "Max" if can_use_max and can_budget_max else "High"
-            reason += (
-                " Applying concept grounding: selecting "
-                f"{initial_tier} based on available VRAM and candidate budget."
-            )
+            if resources["device_type"] != "cuda":
+                initial_tier = "Low"
+                cpu_concept_grounding = True
+                reason += (
+                    " Applying concept grounding: selecting Low on CPU "
+                    "with one candidate."
+                )
+            else:
+                can_use_max = (
+                    time_budget_s >= 5
+                    and (
+                        resources["free_vram_mb"] * (1024**2)
+                        + torch.cuda.memory_reserved()
+                    ) / (1024**3) >= 4.0
+                )
+                max_count = _candidate_count_for_tier("Max", time_budget_s)
+                max_estimate = _CONFIG_LATENCY_ESTIMATES[
+                    (TIERS["Max"]["config"], TIERS["Max"]["steps"])
+                ]
+                can_budget_max = max_estimate * max_count <= 0.8 * time_budget_s
+                initial_tier = "Max" if can_use_max and can_budget_max else "High"
+                reason += (
+                    " Applying concept grounding: selecting "
+                    f"{initial_tier} based on available VRAM and candidate budget."
+                )
     elif tier in TIERS:
         initial_tier = tier
         reason = f"Requested {tier} tier."
@@ -312,7 +320,11 @@ def generate_with_fallback(
         raise ValueError(f"Unknown tier {tier!r}; choose 'auto' or one of {tuple(TIERS)}")
 
     if num_candidates == "auto":
-        candidate_count = _candidate_count_for_tier(initial_tier, time_budget_s)
+        candidate_count = (
+            1
+            if cpu_concept_grounding
+            else _candidate_count_for_tier(initial_tier, time_budget_s)
+        )
         if _LATENCY_HISTORY and _LATENCY_HISTORY[-1] > time_budget_s:
             if _LAST_GENERATION_CANDIDATE_COUNT is not None:
                 if _LAST_GENERATION_CANDIDATE_COUNT > 1:
@@ -340,7 +352,9 @@ def generate_with_fallback(
                             "already at Low."
                         )
         reason += (
-            f" {candidate_count} candidates within {time_budget_s:g} s budget."
+            f" {candidate_count} candidate"
+            f"{'s' if candidate_count != 1 else ''} within "
+            f"{time_budget_s:g} s budget."
         )
     elif isinstance(num_candidates, int) and not isinstance(num_candidates, bool):
         if num_candidates < 1:
@@ -348,6 +362,8 @@ def generate_with_fallback(
         candidate_count = num_candidates
     else:
         raise ValueError("num_candidates must be a positive integer or 'auto'")
+    if cpu_concept_grounding:
+        candidate_count = 1
     start_index = _TIER_ORDER.index(initial_tier)
     fallback_happened = False
     fallback_reasons = []

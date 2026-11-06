@@ -1,4 +1,4 @@
-<USNS>
+1RUA24CSE0343,1RUA24CSE0349,1RUA24CSE0359
 
 # Flicker — Problem Statement P3 Evaluation
 
@@ -68,6 +68,10 @@ FID was computed against the COCO val reference images. Given the 300-image samp
 | dream | 2.97 s |
 | fast | 0.52 s |
 | tiny | 1.37 s |
+
+### End-to-end app latency
+
+Across 35 `generate_with_fallback` requests with tier Auto and a 10 s budget (25 complex prompts plus 10 long prompts of 34–41 words), after a warm-up, mean total was 4.69 s, max was 7.96 s (the first request, including initial model loading), and 100% were under 10 s. The two most-used pipelines, DreamShaper for Max and LCM for High, stayed loaded together. Typical totals were 2.1–2.6 s for High (4 candidates) and 5.7–6.8 s for Max (2 candidates). Per-image latency was 0.49–0.59 s for High and 2.8–3.3 s for Max, consistent with the benchmark tables. Benchmark latency is per image (denoising only); app total includes all candidates, CLIP reranking and post-processing. Before keeping both pipelines loaded, a tier switch reloaded the model (about 5 s; mean 6.06 s, max 9.32 s).
 
 ## 4. Peak memory
 

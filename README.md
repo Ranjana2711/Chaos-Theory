@@ -1,14 +1,6 @@
 # Flicker
 
-## Summary
-
-Flicker is Team Chaos Theory's P3 solution: resource-efficient text-to-image generation intended for mobile-device constraints. It combines Stable Diffusion configurations, adaptive compute tiers, candidate reranking, and optional classical image post-processing.
-
-## Team
-
-Team Chaos Theory — <MEMBERS>
-
-## Live demo
+## 🔗 Live Demo
 
 **Live app:** - https://locks-charts-distinguished-luxury.trycloudflare.com
 
@@ -17,6 +9,18 @@ Team Chaos Theory — <MEMBERS>
 > If the link is down, please follow the **Run locally** steps below.
 
 **Repository:** https://github.com/Ranjana2711/Chaos-Theory
+
+## 👥 Team Chaos Theory (T18)
+
+| Name | USN |
+|---|---|
+| R Akshayaa Sree | 1RUA24CSE0343 |
+| Rachana H | 1RUA24CSE0349 |
+| Ranjana Prashanth | 1RUA24CSE0359 |
+
+## Summary
+
+Flicker is Team Chaos Theory's P3 solution: resource-efficient text-to-image generation intended for mobile-device constraints. It combines Stable Diffusion configurations, adaptive compute tiers, candidate reranking, and optional classical image post-processing.
 
 ## Features
 

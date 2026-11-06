@@ -108,10 +108,11 @@ def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
     )
 
 
-with gr.Blocks(title="Chaos Theory — Text-to-Image") as demo:
+with gr.Blocks(title="Flicker") as demo:
     gr.Markdown(
-        "# Chaos Theory — Resource-Efficient Text-to-Image\n"
-        "Generate an image from a prompt with adaptive compute tiers."
+        "# Flicker\n"
+        "An image in a flicker — resource-efficient text-to-image for mobile devices\n\n"
+        "<small>by Team Chaos Theory</small>"
     )
     with gr.Row():
         prompt = gr.Textbox(

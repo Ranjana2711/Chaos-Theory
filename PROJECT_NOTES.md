@@ -1,4 +1,4 @@
-﻿# Chaos Theory - P3 Resource-Efficient Text-to-Image
+﻿# Flicker (Team Chaos Theory) - P3 Resource-Efficient Text-to-Image
 OS: Windows, GPU: RTX 5060 Laptop 8GB, torch 2.11 cu128, diffusers 0.42, transformers 5, gradio 6, pandas<3, scipy<1.16
 Run scripts as modules from project root: python -m src.<name>. Imports use "from src.x import y".
 Data: data/annotations/captions_val2017.json, data/val2017/

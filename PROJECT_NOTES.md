@@ -14,3 +14,4 @@ Tiers (src/adaptive.py): Max = fp16 512px 25 steps guidance 7.5; High = fast 512
 Only one pipeline in GPU memory at a time. Windows-safe: no multiprocessing, num_workers=0.
 
 Done: dataset.py, generate.py, postprocess.py, adaptive.py, evaluate.py, app.py
+- fp16_lora: fp16 config + our LoRA (rank 8) trained on 1000 COCO train2017 images, weights in outputs/lora_coco. Train/val split: LoRA trained on train2017, evaluated on val2017.

@@ -84,6 +84,21 @@ Marks `src` as the project package; it defines no callable API.
 
 Fast was selected for the High tier because the supplied steps ablation found the best measured CLIP and FID balance at 4 steps. The fp16 tier provides a higher-quality option; tiny supplies the lighter model path.
 
+### LoRA model adaptation
+
+The additional `fp16_lora` config uses the fp16 Stable Diffusion v1.5 model with a rank-8 PEFT LoRA adapter on attention `to_q`, `to_k`, `to_v`, and `to_out.0`. It was trained on 1000 COCO train2017 images for 1000 optimizer steps using batch size 1, gradient accumulation 4, learning rate 1e-4, fp16 mixed precision, and gradient checkpointing. Training took about 25 minutes on the RTX 5060 Laptop 8 GB. Evaluation used the same 300 val2017 captions, preserving the train/validation split.
+
+| Metric | fp16 without LoRA | fp16 with LoRA | Observation |
+|---|---:|---:|---|
+| CLIP | 33.33 | 33.29 | Near the fp16 result |
+| FID | 137.3 | 134.0 | 3.3 better; noisy at 300 images |
+| Latency | 2.97 s | 3.10 s | Unfused LoRA; `fuse_lora` would remove this overhead |
+| Peak VRAM | 3257 MB | 3261 MB | Similar peak use |
+| Parameter increase | — | +1.6M (0.15%) | Small adapter overhead |
+| Size increase | — | +3 MB |  |
+
+The FID change is encouraging but not conclusive because FID on 300 images is noisy.
+
 ## 7. Adaptive controller
 
 | Tier | Configuration |
@@ -111,6 +126,8 @@ Fast was selected for the High tier because the supplied steps ablation found th
 | fp16 | 33.33 | 35.28 | 137.3 | 2.97 s | 3257 MB | 1.066B | 2034 MB |
 | fast | 31.56 | 33.71 | 141.9 | 0.52 s | 3398 MB | 1.133B, including unfused LoRA | 2162 MB |
 | tiny | 31.16 | 33.46 | 142.4 | 1.37 s | 2231 MB | 0.530B | 1011 MB |
+
+The `fp16_lora` adaptation measured CLIP 33.29 and FID 134.0 versus CLIP 33.33 and FID 137.3 for fp16 without LoRA. It took 3.10 s versus 2.97 s with the adapter unfused, used 3261 MB versus 3257 MB peak VRAM, and added 1.6M parameters (0.15%) and 3 MB. `fuse_lora` would remove the latency overhead. The FID improvement is encouraging but inconclusive on a 300-image sample.
 
 | Ablation | Result |
 |---|---|

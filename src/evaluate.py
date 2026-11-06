@@ -11,12 +11,12 @@ import torch.nn.functional as functional
 from PIL import Image
 
 from src.dataset import load_coco_pairs
-from src.generate import Generator
+from src.generate import CONFIGS, Generator
 from src.postprocess import run_pipeline
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_STEPS = {"baseline": 25, "fp16": 25, "fast": 4, "tiny": 20}
+DEFAULT_STEPS = {config: settings["steps"] for config, settings in CONFIGS.items()}
 SEED = 42
 
 

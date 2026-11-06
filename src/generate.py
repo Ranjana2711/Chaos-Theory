@@ -31,6 +31,15 @@ CONFIGS = {
         "scheduler": None,
         "lora": None,
     },
+    "fp16_lora": {
+        "model": "stable-diffusion-v1-5/stable-diffusion-v1-5",
+        "dtype": torch.float16,
+        "steps": 25,
+        "guidance": 7.5,
+        "scheduler": None,
+        "lora": None,
+        "lora_path": "outputs/lora_coco",
+    },
     "fast": {
         "model": "stable-diffusion-v1-5/stable-diffusion-v1-5",
         "dtype": torch.float16,
@@ -72,11 +81,23 @@ class Generator:
             torch.cuda.empty_cache()
 
         settings = CONFIGS[config]
+        lora_path = None
+        if config == "fp16_lora":
+            lora_path = Path(__file__).resolve().parent.parent / settings["lora_path"]
+            if not lora_path.is_dir():
+                raise FileNotFoundError(
+                    f"LoRA weights not found at {lora_path}; "
+                    "run python -m src.train_lora first."
+                )
+
         dtype = settings["dtype"] if self.device.type == "cuda" else torch.float32
         pipeline = StableDiffusionPipeline.from_pretrained(
             settings["model"],
             dtype=dtype,
         )
+
+        if lora_path is not None:
+            pipeline.load_lora_weights(str(lora_path))
 
         if settings["scheduler"] == "lcm":
             pipeline.scheduler = LCMScheduler.from_config(pipeline.scheduler.config)

@@ -107,11 +107,21 @@ python -m src.evaluate --n 300 --configs fast --postprocess
 python -m src.evaluate --n 25 --configs baseline,fp16,fast,tiny --prompts complex
 ```
 
+Download the training subset, fine-tune LoRA, and evaluate it:
+
+```powershell
+python -m src.download_train
+python -m src.train_lora
+python -m src.evaluate --n 300 --configs fp16_lora
+```
+
 Evaluation runs use seed 42. A warm-up generation is excluded from reported latency; latency measures denoising only. The evaluator writes per-run scores and aggregates to `outputs/`.
 
 ## Results headline
 
-On COCO val, fast generation reached 31.56 CLIP with 0.52 s mean latency, a 13.4× speedup over baseline while retaining 94.7% of its CLIP score. The full results and ablations are in the [P3 evaluation report](eval_P3_team18.md).
+On COCO val, fast generation reached 31.56 CLIP with 0.52 s mean latency, a 13.4× speedup over baseline while retaining 94.7% of its CLIP score. The full results and ablations are in the [P3 evaluation report](eval_P3_T18.md).
+
+The rank-8 COCO LoRA adaptation scored 33.29 CLIP and 134.0 FID versus 33.33 and 137.3 for fp16 without LoRA; the FID improvement is encouraging but inconclusive on a 300-image sample.
 
 ## Repo structure
 
@@ -150,4 +160,4 @@ The safety checker handles NSFW content only. The system can imitate copyrighted
 - [Design](docs/DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Failure cases](docs/FAILURES.md)
-- [Evaluation report](eval_P3_team18.md)
+- [Evaluation report](eval_P3_T18.md)

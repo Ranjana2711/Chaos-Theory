@@ -10,9 +10,13 @@ Team Chaos Theory — <MEMBERS>
 
 ## Live demo
 
-**Live URL:** `LIVE_URL_HERE`
+**Live app:** - https://locks-charts-distinguished-luxury.trycloudflare.com
 
-The app runs on our laptop GPU and is made public through Cloudflare Tunnel. Hugging Face Docker/Gradio Spaces require a paid plan for the deployment setup used here.
+> ⚠️ **Note:** The app runs on our own GPU laptop (NVIDIA, CUDA) and is shared publicly through a Cloudflare Tunnel.
+> The link works only while that laptop is switched on and the app is running. It will be kept on during the evaluation window.
+> If the link is down, please follow the **Run locally** steps below.
+
+**Repository:** https://github.com/Ranjana2711/Chaos-Theory
 
 ## Features
 
@@ -121,6 +125,8 @@ Evaluation runs use seed 42. A warm-up generation is excluded from reported late
 ## Results headline
 
 On COCO val, DreamShaper reached 34.15 CLIP versus 33.33 for fp16 SD v1.5 (+0.82), the best score of all configs, with 135.4 FID and the same 2.97 s latency, 3258 MB peak VRAM, and 2034 MB model size. This gives better prompt adherence at no extra measured compute, so DreamShaper is used for Max. The full results and ablations are in the [P3 evaluation report](eval_P3_T18.md).
+
+Across 35 Auto-tier app requests with a 10 s budget and the two most-used pipelines kept loaded, mean total was 4.69 s, max 7.96 s, and all finished under 10 s; per-image denoising was 0.49–0.59 s on High and 2.8–3.3 s on Max.
 
 The rank-8 COCO LoRA adaptation scored 33.29 CLIP and 134.0 FID versus 33.33 and 137.3 for fp16 without LoRA; the FID improvement is encouraging but inconclusive on a 300-image sample.
 

@@ -1,0 +1,14 @@
+torch
+torchvision
+diffusers
+transformers
+accelerate
+peft
+gradio
+opencv-python-headless
+open_clip_torch
+pillow
+numpy
+pandas<3
+psutil
+scipy<1.16

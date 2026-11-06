@@ -77,11 +77,27 @@ def score_images(model, preprocess, tokenizer, image_paths, prompts):
     return scores
 
 
-def save_scores(path, image_names, prompts, scores):
+def load_score_records(path):
+    if not path.is_file():
+        return {}
+    with path.open(newline="", encoding="utf-8") as file:
+        return {row["file"]: row for row in csv.DictReader(file)}
+
+
+def save_scores(path, records):
     with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(("file", "prompt", "clip_score"))
-        writer.writerows(zip(image_names, prompts, scores))
+        fieldnames = ("file", "prompt", "clip_score", "latency_s", "peak_mem_mb")
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+
+
+def remove_unexpected_images(directory, expected_names):
+    image_suffixes = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+    for path in directory.iterdir():
+        if path.is_file() and path.suffix.lower() in image_suffixes:
+            if path.name not in expected_names:
+                path.unlink()
 
 
 def mean_std(values):
@@ -117,34 +133,86 @@ def evaluate_config(
     load_time_s = time.perf_counter() - load_start
 
     model_stats = generator.model_stats(config)
+    warmup = generator.generate(
+        config,
+        "warm-up image; discard this result",
+        seed=SEED,
+        steps=steps,
+    )
+    del warmup
+
     latencies = []
     peak_vram_mb = 0.0
-    image_paths = []
-    image_names = []
+    image_names = [f"{index:06d}.png" for index in range(len(prompts))]
+    image_paths = [run_dir / image_name for image_name in image_names]
+    records_by_name = load_score_records(run_dir / "scores.csv")
+    ordered_records = []
 
     for index, prompt in enumerate(prompts):
-        image_name = f"{index:06d}.png"
-        image_path = run_dir / image_name
-        image_names.append(image_name)
-        image_paths.append(image_path)
-        if image_path.exists():
-            continue
-
-        generated = generator.generate(
-            config,
-            prompt,
-            seed=SEED,
-            steps=steps,
+        image_name = image_names[index]
+        image_path = image_paths[index]
+        cached = records_by_name.get(image_name)
+        cache_is_valid = (
+            cached is not None
+            and cached.get("prompt") == prompt
+            and cached.get("latency_s", "") != ""
+            and cached.get("peak_mem_mb", "") != ""
         )
-        image = generated["image"]
-        if args.postprocess:
-            image, _, _, _ = run_pipeline(image, target_size=512, adaptive=True)
-        image.save(image_path)
-        latencies.append(generated["latency_s"])
-        peak_vram_mb = max(peak_vram_mb, generated["peak_mem_mb"])
 
-    clip_scores = score_images(model, preprocess, tokenizer, image_paths, prompts)
-    save_scores(run_dir / "scores.csv", image_names, prompts, clip_scores)
+        if image_path.exists() and cache_is_valid:
+            try:
+                latency_s = float(cached["latency_s"])
+                peak_mem = float(cached["peak_mem_mb"])
+                float(cached["clip_score"])
+            except (KeyError, ValueError) as error:
+                raise ValueError(
+                    f"Invalid cached metrics in {run_dir / 'scores.csv'} "
+                    f"for {image_name}; remove the stale image to regenerate it."
+                ) from error
+            record = cached
+        else:
+            generated = generator.generate(
+                config,
+                prompt,
+                seed=SEED,
+                steps=steps,
+            )
+            image = generated["image"]
+            if args.postprocess:
+                image, _, _, _ = run_pipeline(image, target_size=512, adaptive=True)
+            image.save(image_path)
+            latency_s = generated["latency_s"]
+            peak_mem = generated["peak_mem_mb"]
+            clip_score = score_images(
+                model,
+                preprocess,
+                tokenizer,
+                [image_path],
+                [prompt],
+            )[0]
+            record = {
+                "file": image_name,
+                "prompt": prompt,
+                "clip_score": clip_score,
+                "latency_s": latency_s,
+                "peak_mem_mb": peak_mem,
+            }
+
+        latencies.append(latency_s)
+        peak_vram_mb = max(peak_vram_mb, peak_mem)
+        ordered_records.append(record)
+        records_by_name[image_name] = record
+        progress_records = [
+            records_by_name[name]
+            for name, current_prompt in zip(image_names, prompts)
+            if name in records_by_name
+            and records_by_name[name].get("prompt") == current_prompt
+            and records_by_name[name].get("latency_s", "") != ""
+            and records_by_name[name].get("peak_mem_mb", "") != ""
+        ]
+        save_scores(run_dir / "scores.csv", progress_records)
+
+    clip_scores = [float(record["clip_score"]) for record in ordered_records]
     clip_mean, clip_std = mean_std(clip_scores)
     latency_mean, latency_std = mean_std(latencies)
 
@@ -152,10 +220,14 @@ def evaluate_config(
     if args.prompts == "coco" and pairs:
         real_dir = PROJECT_ROOT / "outputs" / "eval" / "real_ref" / run_name
         real_dir.mkdir(parents=True, exist_ok=True)
+        generated_names = set(image_names)
+        remove_unexpected_images(run_dir, generated_names)
+        expected_real_names = set()
         for index, (real_image_path, _) in enumerate(pairs):
             destination = real_dir / f"{index:06d}{Path(real_image_path).suffix}"
-            if not destination.exists():
-                shutil.copy2(real_image_path, destination)
+            expected_real_names.add(destination.name)
+            shutil.copy2(real_image_path, destination)
+        remove_unexpected_images(real_dir, expected_real_names)
 
         from cleanfid import fid
 

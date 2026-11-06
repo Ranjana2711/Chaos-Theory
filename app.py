@@ -19,10 +19,10 @@ EXAMPLE_PROMPTS = [
 def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
     if not prompt or not prompt.strip():
         gr.Warning("Please enter a prompt before generating.")
-        return None, None, "", [], [], {}, {}
+        return None, None, "", "", [], [], {}, {}
     if not re.search(r"[A-Za-z0-9]", prompt):
         gr.Warning("Please enter a descriptive prompt.")
-        return None, None, "", [], [], {}, {}
+        return None, None, "", "", [], [], {}, {}
 
     tier = "auto" if tier_label == "Auto" else tier_label
     num_candidates = "auto" if candidate_count == "Auto" else int(candidate_count)
@@ -37,13 +37,13 @@ def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
         )
     except ValueError as error:
         gr.Warning(str(error))
-        return None, None, "", [], [], {}, {}
+        return None, None, "", "", [], [], {}, {}
     except Exception as error:
         raise gr.Error(f"Image generation failed: {error}") from error
 
     if result.get("ip_warning"):
         gr.Warning(result["ip_warning"])
-        return None, None, "", [], [], {}, {}
+        return None, None, "", "", [], [], {}, {}
 
     tier_settings = TIERS[result["tier_used"]]
     model_config = result.get("config", tier_settings["config"])
@@ -112,10 +112,44 @@ def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
         "prompt_analysis": result["prompt_analysis"],
         "resources": result["resources"],
     }
+    quality_after = result["quality_after"]
+    postprocessing_steps = [
+        step_name for step_name, _ in result["intermediates"]
+    ]
+    postprocessing_text = (
+        ", ".join(postprocessing_steps) if postprocessing_steps else "none needed"
+    )
+    flagged_artifacts = [
+        name for name, flagged in result["artifacts"].items() if flagged
+    ]
+    artifacts_text = ", ".join(flagged_artifacts) if flagged_artifacts else "none"
+    prompt_analysis = result["prompt_analysis"]
+    object_names = prompt_analysis["objects"]
+    objects_text = (
+        ", ".join(map(str, object_names)) if object_names else "none detected"
+    )
+    free_vram_mb = result["resources"]["free_vram_mb"]
+    free_vram_text = (
+        f"{free_vram_mb / 1024:.1f} GB"
+        if free_vram_mb is not None
+        else "unavailable"
+    )
+    summary = (
+        f"**Quality:** sharpness {quality_after['sharpness']:.2f}, "
+        f"contrast {quality_after['contrast']:.2f}, "
+        f"colourfulness {quality_after['colorfulness']:.2f}; "
+        f"post-processing applied: {postprocessing_text}; "
+        f"artifacts: {artifacts_text}\n\n"
+        f"**Controller:** detected {len(object_names)} objects ({objects_text}), "
+        f"complexity {prompt_analysis['complexity_score']:.2f}; "
+        f"free VRAM {free_vram_text}; chose {result['tier_used']} "
+        f"because {result['reason']}"
+    )
     return (
         result["raw_image"],
         result["final_image"],
         info,
+        summary,
         gallery,
         candidate_gallery,
         quality,
@@ -177,8 +211,10 @@ with gr.Blocks(
         columns=4,
         height=240,
     )
-    quality_output = gr.JSON(label="Quality and artifact report")
-    controller_output = gr.JSON(label="Controller decisions")
+    summary_output = gr.Markdown(label="Generation summary")
+    with gr.Accordion("Details", open=False):
+        quality_output = gr.JSON(label="Quality and artifact report")
+        controller_output = gr.JSON(label="Controller decisions")
 
     generate_button.click(
         fn=generate,
@@ -187,6 +223,7 @@ with gr.Blocks(
             raw_output,
             final_output,
             info_output,
+            summary_output,
             intermediate_output,
             candidate_output,
             quality_output,

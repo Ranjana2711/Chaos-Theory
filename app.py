@@ -1,9 +1,11 @@
+import inspect
 import os
 import re
 
 import gradio as gr
 
 from src.adaptive import TIERS, generate_with_fallback
+from src.ui_theme import CSS, HEAD, HERO_HTML, make_theme
 
 
 EXAMPLE_PROMPTS = [
@@ -108,12 +110,13 @@ def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
     )
 
 
-with gr.Blocks(title="Flicker") as demo:
-    gr.Markdown(
-        "# Flicker\n"
-        "An image in a flicker — resource-efficient text-to-image for mobile devices\n\n"
-        "<small>by Team Chaos Theory</small>"
-    )
+theme_options = {"css": CSS, "head": HEAD, "theme": make_theme()}
+launch_supports_css = "css" in inspect.signature(gr.Blocks.launch).parameters
+with gr.Blocks(
+    title="Flicker",
+    **({} if launch_supports_css else theme_options),
+) as demo:
+    gr.HTML(HERO_HTML)
     with gr.Row():
         prompt = gr.Textbox(
             label="Prompt",
@@ -134,7 +137,11 @@ with gr.Blocks(title="Flicker") as demo:
             label="Candidates",
         )
         seed = gr.Number(value=42, precision=0, label="Seed")
-        generate_button = gr.Button("Generate", variant="primary")
+        generate_button = gr.Button(
+            "Generate",
+            variant="primary",
+            elem_id="flicker-generate",
+        )
 
     gr.Examples(
         examples=[[example] for example in EXAMPLE_PROMPTS],
@@ -176,7 +183,13 @@ with gr.Blocks(title="Flicker") as demo:
 
 
 if __name__ == "__main__":
+    launch_options = (
+        theme_options
+        if "css" in inspect.signature(demo.launch).parameters
+        else {}
+    )
     demo.queue().launch(
+        **launch_options,
         server_name=os.getenv("HOST", "127.0.0.1"),
         server_port=int(os.environ.get("PORT", "7860")),
         share=os.environ.get("SHARE") == "1",

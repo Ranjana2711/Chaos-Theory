@@ -363,3 +363,4 @@ if __name__ == "__main__":
             f"{result['peak_mem_mb']:.1f} MB"
         )
         print(generator.model_stats(config_name))
+        #generate.py file 

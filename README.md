@@ -16,8 +16,9 @@ The app runs on our laptop GPU and is made public through Cloudflare Tunnel. Hug
 
 ## Features
 
-- Four generation configs: baseline, fp16, fast, and tiny.
+- Five generation configs: baseline, fp16, DreamShaper (`dream`), fast, and tiny.
 - Adaptive Max, High, Medium, and Low tiers.
+- DreamShaper powers the Max tier for improved prompt adherence at the same measured latency as fp16 SD v1.5.
 - Automatic fallback to a lower tier after an OOM or `RuntimeError`.
 - Feedback controller informed by available resources, prompt complexity, time budget, and recent latency.
 - Prompt analyzer and enhancer, including visual expansion for selected concepts.
@@ -119,7 +120,7 @@ Evaluation runs use seed 42. A warm-up generation is excluded from reported late
 
 ## Results headline
 
-On COCO val, fast generation reached 31.56 CLIP with 0.52 s mean latency, a 13.4× speedup over baseline while retaining 94.7% of its CLIP score. The full results and ablations are in the [P3 evaluation report](eval_P3_T18.md).
+On COCO val, DreamShaper reached 34.15 CLIP versus 33.33 for fp16 SD v1.5 (+0.82), the best score of all configs, with 135.4 FID and the same 2.97 s latency, 3258 MB peak VRAM, and 2034 MB model size. This gives better prompt adherence at no extra measured compute, so DreamShaper is used for Max. The full results and ablations are in the [P3 evaluation report](eval_P3_T18.md).
 
 The rank-8 COCO LoRA adaptation scored 33.29 CLIP and 134.0 FID versus 33.33 and 137.3 for fp16 without LoRA; the FID improvement is encouraging but inconclusive on a 300-image sample.
 

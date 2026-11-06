@@ -41,6 +41,10 @@ def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
     except Exception as error:
         raise gr.Error(f"Image generation failed: {error}") from error
 
+    if result.get("ip_warning"):
+        gr.Warning(result["ip_warning"])
+        return None, None, "", [], [], {}, {}
+
     tier_settings = TIERS[result["tier_used"]]
     model_config = result.get("config", tier_settings["config"])
     steps = result.get("steps", tier_settings["steps"])

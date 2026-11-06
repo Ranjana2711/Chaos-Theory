@@ -79,10 +79,11 @@ Marks `src` as the project package; it defines no callable API.
 |---|---|---|
 | baseline | Stable Diffusion v1.5 reference | fp32 sampling |
 | fp16 | Quality-preserving lower-memory option | Half-precision sampling |
+| dream | Lykon/dreamshaper-8, a community fine-tune of SD v1.5 with the same architecture | fp16, DPM-Solver++, 25 steps, guidance 7.5; SD v1.5 safety checker attached |
 | fast | Low-latency option | LCM-LoRA, 4 steps, guidance 1.0 |
 | tiny | Small-model option | BK-SDM-Tiny fp16 with DPM-Solver |
 
-Fast was selected for the High tier because the supplied steps ablation found the best measured CLIP and FID balance at 4 steps. The fp16 tier provides a higher-quality option; tiny supplies the lighter model path.
+DreamShaper is distributed under CreativeML OpenRAIL-M. On COCO val it scored 34.15 CLIP versus 33.33 for fp16 SD v1.5 (+0.82), with 135.4 FID, 2.97 s latency, 3258 MB peak VRAM, and 2034 MB model size. On the 25 complex multi-object prompts it scored 37.26 CLIP versus 35.28 for fp16 and 35.20 for baseline (+1.98 over SD v1.5), with 2.82 s latency. The gain over SD v1.5 is larger on complex prompts (+1.98) than on COCO captions (+0.82). It provides better prompt adherence without extra measured compute. Fast was selected for the High tier because the supplied steps ablation found the best measured CLIP and FID balance at 4 steps; tiny supplies the lighter model path.
 
 ### LoRA model adaptation
 
@@ -103,12 +104,12 @@ The FID change is encouraging but not conclusive because FID on 300 images is no
 
 | Tier | Configuration |
 |---|---|
-| Max | fp16, 512px, 25 steps, guidance 7.5 |
+| Max | dream, 512px, 25 steps, guidance 7.5 |
 | High | fast, 512px, 4 steps, CLIP best-of-N reranking |
 | Medium | fast, 512px, 2 steps |
 | Low | tiny, 384px, 15 steps, then Lanczos upscale to 512px |
 
-`choose_tier` combines resource profiling, prompt complexity, time budget, and recent latency. The latency history provides feedback to later choices. `generate_with_fallback` moves to a lower tier when generation raises an OOM or `RuntimeError`; `_drop_pipeline` releases the current model before trying again. For automatic concept-grounding requests, the implementation chooses Max with 3 candidates when VRAM and time permit, otherwise High with 4 candidates. `pick_best` reranks candidate images against the prompt or the subject and expanded concepts.
+`choose_tier` combines resource profiling, prompt complexity, time budget, and recent latency. The latency history provides feedback to later choices. `generate_with_fallback` moves to a lower tier when generation raises an OOM or `RuntimeError`; `_drop_pipeline` releases the current model before trying again. For automatic concept-grounding requests, the implementation uses concept-grounded reranking across 4 candidates. `pick_best` reranks candidate images against the prompt or the subject and expanded concepts.
 
 ## 8. Classical CV pipeline
 
@@ -124,6 +125,7 @@ The FID change is encouraging but not conclusive because FID on 300 images is no
 |---|---:|---:|---:|---:|---:|---:|---:|
 | baseline | 33.31 | 35.20 | 138.0 | 6.97 s | 6226 MB | 1.066B | 4067 MB |
 | fp16 | 33.33 | 35.28 | 137.3 | 2.97 s | 3257 MB | 1.066B | 2034 MB |
+| dream | 34.15 | 37.26 | 135.4 | 2.97 s | 3258 MB | — | 2034 MB |
 | fast | 31.56 | 33.71 | 141.9 | 0.52 s | 3398 MB | 1.133B, including unfused LoRA | 2162 MB |
 | tiny | 31.16 | 33.46 | 142.4 | 1.37 s | 2231 MB | 0.530B | 1011 MB |
 
@@ -141,9 +143,11 @@ Speedups against baseline were 2.3× for fp16, 13.4× for fast, and 5.1× for ti
 ## 11. Design decisions and trade-offs
 
 - Keep a full precision reference alongside faster and smaller options.
+- Use DreamShaper for Max: its COCO val CLIP score is 34.15 versus 33.33 for fp16 SD v1.5 (+0.82), at the same measured latency, VRAM, and model size.
 - Use 4-step LCM for High based on the measured ablation instead of assuming more steps improve quality.
 - Keep guidance at 1.0 for fast; the higher tested setting reduced measured CLIP, worsened FID, and increased latency.
-- Use best-of-N CLIP reranking to improve candidate selection without changing the generation model.
+- Emphasize hard concepts with prompt token weighting of 1.4 and use concept-grounded reranking across 4 candidates.
+- Refuse prompts containing franchise names to avoid generating copyrighted characters.
 - Keep classical post-processing optional because its measured effect on CLIP and FID was neutral.
 - Return quality, artifact, resource, and candidate details to make generation outcomes inspectable.
 

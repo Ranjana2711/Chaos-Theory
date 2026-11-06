@@ -1,6 +1,6 @@
 import gc
+import re
 from collections import deque
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -22,7 +22,7 @@ from src.rerank import pick_best
 
 TIERS = {
     "Max": {
-        "config": "fp16",
+        "config": "dream",
         "size": 512,
         "steps": 25,
         "guidance": 7.5,
@@ -37,7 +37,27 @@ TIERS = {
 _TIER_ORDER = ("Max", "High", "Medium", "Low")
 _GENERATOR = Generator()
 _LATENCY_HISTORY = deque(maxlen=5)
-_COCO_LORA_DIR = Path(__file__).resolve().parent.parent / "outputs" / "lora_coco"
+_RARE_CONCEPTS = ("ghost", "headphones", "dragon", "spirit")
+FRANCHISE_TERMS = (
+    "marvel",
+    "spider-man",
+    "spiderman",
+    "iron man",
+    "avengers",
+    "batman",
+    "superman",
+    "disney",
+    "pixar",
+    "pokemon",
+    "pikachu",
+    "mickey mouse",
+    "harry potter",
+    "naruto",
+)
+IP_WARNING = (
+    "This prompt names a copyrighted character or franchise. Try describing an "
+    "original character instead, e.g. 'a masked superhero in a red and blue suit'."
+)
 
 
 def _process_image(raw_image, postprocess):
@@ -183,6 +203,18 @@ def _drop_pipeline(generator):
     torch.cuda.empty_cache()
 
 
+def _emphasis_terms(prompt, prompt_analysis, concept_terms):
+    terms = list(concept_terms)
+    for term in _RARE_CONCEPTS:
+        if term in prompt_analysis["objects"] or re.search(
+            r"(?<!\w)" + re.escape(term) + r"(?!\w)",
+            prompt,
+            flags=re.IGNORECASE,
+        ):
+            terms.append(term)
+    return list(dict.fromkeys(terms))
+
+
 def generate_with_fallback(
     prompt,
     tier="auto",
@@ -193,6 +225,16 @@ def generate_with_fallback(
     num_candidates="auto",
 ):
     original_prompt = prompt
+    if any(
+        re.search(
+            r"(?<!\w)" + re.escape(term) + r"(?!\w)",
+            original_prompt,
+            flags=re.IGNORECASE,
+        )
+        for term in FRANCHISE_TERMS
+    ):
+        return {"ip_warning": IP_WARNING}
+
     if enhance:
         (
             generation_prompt,
@@ -208,9 +250,13 @@ def generate_with_fallback(
         concept_terms = []
         subject = ""
 
+    prompt_analysis = analyze_prompt(generation_prompt)
+    weighted_terms = _emphasis_terms(generation_prompt, prompt_analysis, concept_terms)
+    emphasis = {term: 1.4 for term in weighted_terms} or None
+
     if tier == "auto":
         initial_tier, reason = choose_tier(time_budget_s, generation_prompt)
-        if concept_terms:
+        if weighted_terms:
             resources = profile_resources()
             can_use_max = (
                 resources["device_type"] == "cuda"
@@ -244,29 +290,26 @@ def generate_with_fallback(
         candidate_count = num_candidates
     else:
         raise ValueError("num_candidates must be a positive integer or 'auto'")
+    if weighted_terms:
+        candidate_count = 4
 
-    prompt_analysis = analyze_prompt(generation_prompt)
     start_index = _TIER_ORDER.index(initial_tier)
     fallback_happened = False
     fallback_reasons = []
     peak_mem_mb = 0.0
     total_latency_s = 0.0
     total_load_time_s = 0.0
-    coco_lora_used = False
     rerank_prompt = original_prompt
-    if concept_terms:
-        concept_descriptions = [CONCEPT_MAP[concept] for concept in concept_terms]
+    if weighted_terms:
+        concept_descriptions = [
+            CONCEPT_MAP[concept] for concept in concept_terms if concept in CONCEPT_MAP
+        ]
         rerank_prompt = ", ".join(
-            part for part in (subject, *concept_descriptions) if part
+            part for part in (subject, *concept_descriptions, *weighted_terms) if part
         )
 
     for tier_name in _TIER_ORDER[start_index:]:
-        settings = dict(TIERS[tier_name])
-        if tier_name == "Max" and _COCO_LORA_DIR.is_dir():
-            settings["config"] = "fp16_lora"
-            if not coco_lora_used:
-                reason += " Using COCO LoRA for the Max tier."
-                coco_lora_used = True
+        settings = TIERS[tier_name]
         candidates = []
         try:
             for candidate_index in range(candidate_count):
@@ -278,6 +321,7 @@ def generate_with_fallback(
                     steps=settings["steps"],
                     negative_prompt=settings.get("negative_prompt", negative_prompt),
                     guidance=settings.get("guidance"),
+                    emphasis=emphasis,
                 )
                 candidates.append(generated["image"])
                 total_latency_s += generated["latency_s"]
@@ -308,6 +352,7 @@ def generate_with_fallback(
                 steps=settings["steps"],
                 negative_prompt=settings.get("negative_prompt", negative_prompt),
                 guidance=settings.get("guidance"),
+                emphasis=emphasis,
             )
             total_latency_s += generated["latency_s"]
             total_load_time_s += generated["load_time_s"]
@@ -329,6 +374,8 @@ def generate_with_fallback(
         if fallback_happened:
             reason += " " + " ".join(fallback_reasons)
             reason += f" Fell back to {tier_name}."
+        if emphasis:
+            reason += f" Applied emphasis to: {', '.join(weighted_terms)}."
 
         latency_s = total_latency_s
         _LATENCY_HISTORY.append(latency_s)

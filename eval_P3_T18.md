@@ -25,8 +25,11 @@
 |---|---|---|---|---|
 | baseline | Stable Diffusion v1.5 fp32 | 25 steps | 7.5 | Reference config |
 | fp16 | Stable Diffusion v1.5 fp16 | 25 steps | 7.5 | Half precision |
+| dream | Lykon/dreamshaper-8 fp16 | 25 steps | 7.5 | DPM-Solver++; SD v1.5 safety checker attached |
 | fast | Stable Diffusion v1.5 fp16 | 4 steps | 1.0 | LCM-LoRA |
 | tiny | BK-SDM-Tiny fp16 | 20 steps | 7.5 | DPM-Solver |
+
+DreamShaper-8 is a community fine-tune of SD v1.5 with the same architecture and is distributed under CreativeML OpenRAIL-M.
 
 ## 1. CLIP similarity
 
@@ -34,10 +37,15 @@
 |---|---:|---:|
 | baseline | 33.31 | 35.20 |
 | fp16 | 33.33 | 35.28 |
+| dream | 34.15 | 37.26 |
 | fast | 31.56 | 33.71 |
 | tiny | 31.16 | 33.46 |
 
-Complex-prompt results use the supplied set of 25 multi-object prompts.
+On the 25 complex multi-object prompts, dream scored 37.26 CLIP versus 35.28 for fp16 and 35.20 for baseline, a +1.98 gain over SD v1.5, with 2.82 s latency. The gain over SD v1.5 is larger on complex prompts (+1.98) than on COCO captions (+0.82).
+
+### Base checkpoint comparison
+
+On COCO val, DreamShaper scored 34.15 CLIP versus 33.33 for fp16 SD v1.5 (+0.82), the best CLIP score of all configs. It is a same-architecture SD v1.5 fine-tune, so the prompt-adherence gain came with no extra measured compute.
 
 ## 2. FID
 
@@ -45,6 +53,7 @@ Complex-prompt results use the supplied set of 25 multi-object prompts.
 |---|---:|
 | baseline | 138.0 |
 | fp16 | 137.3 |
+| dream | 135.4 |
 | fast | 141.9 |
 | tiny | 142.4 |
 
@@ -56,6 +65,7 @@ FID was computed against the COCO val reference images. Given the 300-image samp
 |---|---:|
 | baseline | 6.97 s |
 | fp16 | 2.97 s |
+| dream | 2.97 s |
 | fast | 0.52 s |
 | tiny | 1.37 s |
 
@@ -65,6 +75,7 @@ FID was computed against the COCO val reference images. Given the 300-image samp
 |---|---:|
 | baseline | 6226 MB |
 | fp16 | 3257 MB |
+| dream | 3258 MB |
 | fast | 3398 MB |
 | tiny | 2231 MB |
 
@@ -74,6 +85,7 @@ FID was computed against the COCO val reference images. Given the 300-image samp
 |---|---:|---:|
 | baseline | 1.066B | 4067 MB |
 | fp16 | 1.066B | 2034 MB |
+| dream | — | 2034 MB |
 | fast | 1.133B, including unfused LoRA | 2162 MB |
 | tiny | 0.530B | 1011 MB |
 

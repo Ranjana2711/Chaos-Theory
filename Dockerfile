@@ -1,3 +1,5 @@
+# Build with "docker build -t flicker ." and run with "docker run --gpus all -p 7860:7860 flicker".
+# GPU needs the NVIDIA Container Toolkit; without --gpus it runs on CPU in the Low tier.
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,6 +22,7 @@ RUN pip install --no-cache-dir -r requirements-deploy.txt
 COPY --chown=user src/ ./src/
 COPY --chown=user app.py ./
 COPY --chown=user prompts/ ./prompts/
+COPY --chown=user assets/ ./assets/
 COPY --chown=user PROJECT_NOTES.md ./
 
 EXPOSE 7860

@@ -1,4 +1,5 @@
 import gc
+import math
 import re
 from collections import deque
 
@@ -10,7 +11,7 @@ from PIL import Image
 
 from src.generate import Generator
 from src.prompt_analyzer import analyze_prompt
-from src.prompt_enhancer import CONCEPT_MAP, NEGATIVE_PROMPT, enhance_prompt
+from src.prompt_enhancer import ANIMALS, CONCEPT_MAP, NEGATIVE_PROMPT, enhance_prompt
 from src.postprocess import (
     detect_artifacts,
     lanczos_resize,
@@ -37,6 +38,13 @@ TIERS = {
 _TIER_ORDER = ("Max", "High", "Medium", "Low")
 _GENERATOR = Generator()
 _LATENCY_HISTORY = deque(maxlen=5)
+_CONFIG_LATENCY_ESTIMATES = {
+    ("dream", 25): 2.9,
+    ("fp16", 25): 3.0,
+    ("fast", 4): 0.55,
+    ("fast", 2): 0.4,
+    ("tiny", 15): 1.4,
+}
 _RARE_CONCEPTS = ("ghost", "headphones", "dragon", "spirit")
 FRANCHISE_TERMS = (
     "marvel",
@@ -203,8 +211,22 @@ def _drop_pipeline(generator):
     torch.cuda.empty_cache()
 
 
-def _emphasis_terms(prompt, prompt_analysis, concept_terms):
+def _record_config_latency(settings, latency_s):
+    key = (settings["config"], settings["steps"])
+    _CONFIG_LATENCY_ESTIMATES[key] = latency_s
+
+
+def _emphasis_terms(prompt, prompt_analysis, concept_terms, subject=""):
     terms = list(concept_terms)
+    animal_search_text = subject or prompt
+    for animal in ANIMALS:
+        if re.search(
+            r"(?<!\w)" + re.escape(animal) + r"(?!\w)",
+            animal_search_text,
+            flags=re.IGNORECASE,
+        ):
+            terms.append(animal)
+            break
     for term in _RARE_CONCEPTS:
         if term in prompt_analysis["objects"] or re.search(
             r"(?<!\w)" + re.escape(term) + r"(?!\w)",
@@ -251,8 +273,12 @@ def generate_with_fallback(
         subject = ""
 
     prompt_analysis = analyze_prompt(generation_prompt)
-    weighted_terms = _emphasis_terms(generation_prompt, prompt_analysis, concept_terms)
-    emphasis = {term: 1.4 for term in weighted_terms} or None
+    weighted_terms = _emphasis_terms(
+        generation_prompt, prompt_analysis, concept_terms, subject
+    )
+    animal_subject = any(term in ANIMALS for term in weighted_terms)
+    emphasis_weight = 1.3 if animal_subject else 1.4
+    emphasis = {term: emphasis_weight for term in weighted_terms} or None
 
     if tier == "auto":
         initial_tier, reason = choose_tier(time_budget_s, generation_prompt)
@@ -278,21 +304,22 @@ def generate_with_fallback(
         raise ValueError(f"Unknown tier {tier!r}; choose 'auto' or one of {tuple(TIERS)}")
 
     if num_candidates == "auto":
-        if concept_terms and tier == "auto":
-            candidate_count = 3 if initial_tier == "Max" else 4
-        else:
-            candidate_count = (
-                3 if time_budget_s >= 5 and initial_tier in ("High", "Medium") else 1
-            )
+        settings = TIERS[initial_tier]
+        latency_key = (settings["config"], settings["steps"])
+        latency_estimate = _CONFIG_LATENCY_ESTIMATES[latency_key]
+        candidate_count = max(
+            1,
+            min(4, math.floor(0.8 * time_budget_s / latency_estimate)),
+        )
+        reason += (
+            f" {candidate_count} candidates within {time_budget_s:g} s budget."
+        )
     elif isinstance(num_candidates, int) and not isinstance(num_candidates, bool):
         if num_candidates < 1:
             raise ValueError("num_candidates must be positive or 'auto'")
         candidate_count = num_candidates
     else:
         raise ValueError("num_candidates must be a positive integer or 'auto'")
-    if weighted_terms:
-        candidate_count = 4
-
     start_index = _TIER_ORDER.index(initial_tier)
     fallback_happened = False
     fallback_reasons = []
@@ -319,12 +346,13 @@ def generate_with_fallback(
                     seed=seed + candidate_index,
                     size=settings["size"],
                     steps=settings["steps"],
-                    negative_prompt=settings.get("negative_prompt", negative_prompt),
+                    negative_prompt=negative_prompt or settings.get("negative_prompt"),
                     guidance=settings.get("guidance"),
                     emphasis=emphasis,
                 )
                 candidates.append(generated["image"])
                 total_latency_s += generated["latency_s"]
+                _record_config_latency(settings, generated["latency_s"])
                 total_load_time_s += generated["load_time_s"]
                 peak_mem_mb = max(peak_mem_mb, generated["peak_mem_mb"])
         except (torch.cuda.OutOfMemoryError, RuntimeError) as error:
@@ -350,11 +378,12 @@ def generate_with_fallback(
                 seed=seed + 1,
                 size=settings["size"],
                 steps=settings["steps"],
-                negative_prompt=settings.get("negative_prompt", negative_prompt),
+                negative_prompt=negative_prompt or settings.get("negative_prompt"),
                 guidance=settings.get("guidance"),
                 emphasis=emphasis,
             )
             total_latency_s += generated["latency_s"]
+            _record_config_latency(settings, generated["latency_s"])
             total_load_time_s += generated["load_time_s"]
             peak_mem_mb = max(peak_mem_mb, generated["peak_mem_mb"])
             candidates[chosen_index] = generated["image"]

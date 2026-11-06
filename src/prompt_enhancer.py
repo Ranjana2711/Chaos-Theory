@@ -8,6 +8,15 @@ NEGATIVE_PROMPT = (
     "jpeg artifacts"
 )
 
+ANIMALS = [
+    "cat", "dog", "kitten", "puppy", "rabbit", "bird", "horse",
+    "fox", "bear", "owl", "panda", "tiger", "lion",
+]
+_ANIMAL_NEGATIVE_TERMS = (
+    "human, person, girl, woman, man, humanoid, anthropomorphic, cat ears, "
+    "animal ears, anime"
+)
+
 CONCEPT_MAP = {
     "ghost": "translucent glowing white ghostly figure, spectral apparition",
     "spirit": "glowing ethereal figure",
@@ -72,7 +81,7 @@ def _remove_leading_instructions(prompt):
 
 
 def _find_subject(prompt, analysis):
-    noun_terms = set(analysis["objects"]) | set(CONCEPT_MAP)
+    noun_terms = set(analysis["objects"]) | set(CONCEPT_MAP) | set(ANIMALS)
     noun_pattern = re.compile(
         r"(?<!\w)(?:" + "|".join(
             re.escape(term) for term in sorted(noun_terms, key=len, reverse=True)
@@ -104,6 +113,18 @@ def enhance_prompt(prompt):
     analysis_prompt = " ".join(_remove_leading_instructions(prompt).split())
     analysis = analyze_prompt(analysis_prompt)
     subject = _find_subject(analysis_prompt, analysis)
+    animal = next(
+        (
+            candidate
+            for candidate in ANIMALS
+            if re.search(
+                r"(?<!\w)" + re.escape(candidate) + r"(?!\w)",
+                subject,
+                flags=re.IGNORECASE,
+            )
+        ),
+        None,
+    )
 
     concept_matches = []
     occupied = []
@@ -132,8 +153,13 @@ def enhance_prompt(prompt):
     elif expansions:
         expanded_prompt = ", ".join(expansions + ([analysis_prompt] if analysis_prompt else []))
 
+    if animal:
+        expanded_prompt = f"a real {animal}, animal photograph, {expanded_prompt}"
+
     detected_styles = set(analysis["style"])
-    if re.search(
+    if animal:
+        terms = _STYLE_TERMS["photo"]
+    elif re.search(
         r"\b(?:ghost|dragon|fairy|monster|spirit|magic|alien|wizard|demon|unicorn)\b",
         analysis_prompt,
         flags=re.IGNORECASE,
@@ -168,7 +194,11 @@ def enhance_prompt(prompt):
         separator = ", " if expanded_prompt.strip() else ""
         enhanced_prompt = f"{expanded_prompt}{separator}{', '.join(included_terms)}"
 
-    return enhanced_prompt, NEGATIVE_PROMPT, included_terms, concept_terms, subject
+    negative_prompt = NEGATIVE_PROMPT
+    if animal:
+        negative_prompt = f"{negative_prompt}, {_ANIMAL_NEGATIVE_TERMS}"
+
+    return enhanced_prompt, negative_prompt, included_terms, concept_terms, subject
 
 
 if __name__ == "__main__":

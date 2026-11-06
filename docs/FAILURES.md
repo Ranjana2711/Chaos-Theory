@@ -34,15 +34,17 @@
 
 ![Max tier result](failures/03b_headphones_max.png)
 
+![After: Max tier (DreamShaper 8) with animal-subject protection (real-animal wording + negative prompt 'human, girl, cat ears, anime'), emphasis on 'cat' and 'headphones', concept-grounded reranking](failures/03c_headphones_fixed.png)
+
 | Field | Analysis |
 |---|---|
 | Prompt | “a cat wearing large red over-ear headphones, sitting on a sofa” |
-| Tier / config | High (fast, 4–8 steps, guidance 1.0–1.8); Max (fp16, 25 steps, guidance 7.5) |
+| Tier / config | High (fast, 4–8 steps, guidance 1.0–1.8); Max (DreamShaper 8, 25 steps, guidance 7.5) |
 | Expected | A cat wearing large red over-ear headphones while sitting on a sofa |
 | Actual | High omitted the headphones. Max also omitted them, drew only a partial dark band, and moved “red” onto the sofa (attribute leakage). |
-| Root cause | Rare animal-plus-accessory pairs in training data and weak attribute binding; low LCM guidance favours the main subject. |
-| Mitigation tried | Concrete wording, prompt enhancer, 3-candidate CLIP reranking, and Max tier |
-| Outcome | Not fixed; documented |
+| Root cause | Rare animal-plus-accessory pairs in training data, weak attribute binding, and subject substitution driven by model bias toward people; low LCM guidance favours the main subject. |
+| Mitigation tried | Real-animal wording, animal-specific negative prompt, emphasis on “cat” and “headphones,” concept-grounded reranking, and Max tier |
+| Outcome | Fixed for this prompt; fixing it revealed subject substitution, solved with subject protection |
 
 ## 4. Small-face distortion
 
@@ -64,15 +66,17 @@
 
 ![Ghost omitted in an abandoned building](failures/05b_ghost_building.png)
 
+![After: Max tier (DreamShaper 8) with concept expansion, emphasis on 'ghost' and concept-grounded reranking](failures/05c_ghost_fixed.png)
+
 | Field | Analysis |
 |---|---|
 | Prompt | “ghost in a graveyard”; “create a ghost in an abandoned building” |
-| Tier / config | High tier |
+| Tier / config | High tier; Max tier (DreamShaper 8) |
 | Expected | A visible ghost in each scene |
 | Actual | The scenes were drawn, but no ghost appeared. |
 | Root cause | “Ghost” has no consistent visual form. The enhancer initially added “professional photograph, natural lighting,” pushing toward realistic empty scenes; “create” is an instruction word the model ignores. |
 | Mitigation tried | Mood-aware enhancer (fantasy → digital art terms), stripping instruction words, concept expansion (ghost → translucent glowing figure), and concept-grounded reranking |
-| Outcome | Partially improved |
+| Outcome | Fixed for this prompt |
 
 ## 6. Configuration findings from ablations
 
@@ -92,11 +96,13 @@
 |---|---|---|---|
 | Counting and colour binding | Weak count and colour binding in the SD v1.5 CLIP text encoder | CLIP best-of-N reranking; Max tier | Known limitation |
 | Text rendering and IP | Token-based text representation and reproduction of styles from training data | Ethics documentation; brand/character prompt filter is future work | Known limitation |
-| Rare concept composition | Rare animal-accessory combinations and weak attribute binding | Concrete wording, prompt enhancer, 3-candidate reranking, Max tier | Not fixed; documented |
+| Rare concept composition | Rare animal-accessory combinations, weak attribute binding, and subject substitution | Real-animal wording, animal-specific negative prompt, emphasis on subject and accessory, concept-grounded reranking, Max tier | Fixed |
 | Small-face distortion | Too few pixels for small faces at 512×512 | Close-up framing; face restoration is future work | Workaround |
-| Abstract subject omitted | Inconsistent visual form and enhancement/instruction phrasing that steered away from the concept | Fantasy-aware terms, instruction stripping, concept expansion, concept-grounded reranking | Partially improved |
+| Abstract subject omitted | Inconsistent visual form and enhancement/instruction phrasing that steered away from the concept | Fantasy-aware terms, instruction stripping, concept expansion, concept-grounded reranking | Fixed |
 | Configuration findings | More LCM steps and higher guidance underperformed in the measured ablations | High uses 4 steps, guidance 1.0 | Action taken |
 
 ## Lessons
 
 Most failures come from SD v1.5's text encoder; larger models (SDXL, SD3) handle composition better but exceed our mobile memory budget, which is the trade-off this project studies.
+
+A stronger checkpoint fixed concept neglect but introduced subject substitution; targeted prompt engineering (subject protection and emphasis) resolved both.

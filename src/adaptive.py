@@ -9,22 +9,30 @@ from PIL import Image
 
 from src.generate import Generator
 from src.prompt_analyzer import analyze_prompt
-from src.prompt_enhancer import enhance_prompt
+from src.prompt_enhancer import NEGATIVE_PROMPT, enhance_prompt
 from src.postprocess import (
     detect_artifacts,
     lanczos_resize,
     quality_report,
     run_pipeline,
 )
+from src.rerank import pick_best
 
 
 TIERS = {
+    "Max": {
+        "config": "fp16",
+        "size": 512,
+        "steps": 25,
+        "guidance": 7.5,
+        "negative_prompt": NEGATIVE_PROMPT,
+    },
     "High": {"config": "fast", "size": 512, "steps": 8},
     "Medium": {"config": "fast", "size": 512, "steps": 4},
     "Low": {"config": "tiny", "size": 384, "steps": 15},
 }
 
-_TIER_ORDER = ("High", "Medium", "Low")
+_TIER_ORDER = ("Max", "High", "Medium", "Low")
 _GENERATOR = Generator()
 _LATENCY_HISTORY = deque(maxlen=5)
 
@@ -99,34 +107,51 @@ def choose_tier(time_budget_s=10, prompt=""):
     """Choose a tier using resources, prompt complexity, time, and recent latency."""
     resources = profile_resources()
     prompt_analysis = analyze_prompt(prompt)
+    complexity_score = prompt_analysis["complexity_score"]
+    effective_free_gb = 0.0
     if resources["device_type"] == "cpu":
-        tier_index = 2
+        tier_index = _TIER_ORDER.index("Low")
         reason = "CPU detected; selecting Low to use the smaller model."
     else:
         effective_free_bytes = (
             resources["free_vram_mb"] * (1024**2) + torch.cuda.memory_reserved()
         )
         effective_free_gb = effective_free_bytes / (1024**3)
-        if effective_free_gb >= 6.0:
-            tier_index = 0
+        if (
+            complexity_score >= 0.5
+            and time_budget_s >= 5
+            and effective_free_gb >= 4.0
+        ):
+            tier_index = _TIER_ORDER.index("Max")
+            reason = (
+                f"Selecting Max: prompt complexity {complexity_score:.2f} >= 0.50, "
+                f"time budget {time_budget_s:.1f}s >= 5s, and "
+                f"{effective_free_gb:.1f} GB effective free VRAM >= 4 GB."
+            )
+        elif effective_free_gb >= 6.0:
+            tier_index = _TIER_ORDER.index("High")
             reason = f"{effective_free_gb:.1f} GB effective free VRAM supports High."
         elif effective_free_gb >= 3.0:
-            tier_index = 1
+            tier_index = _TIER_ORDER.index("Medium")
             reason = f"{effective_free_gb:.1f} GB effective free VRAM supports Medium."
         else:
-            tier_index = 2
+            tier_index = _TIER_ORDER.index("Low")
             reason = f"Only {effective_free_gb:.1f} GB effective free VRAM; selecting Low."
 
-    complexity_score = prompt_analysis["complexity_score"]
-    if complexity_score >= 0.6 and tier_index < len(_TIER_ORDER) - 1:
+    max_selected = tier_index == _TIER_ORDER.index("Max")
+    if (
+        not max_selected
+        and complexity_score >= 0.6
+        and tier_index < _TIER_ORDER.index("Low")
+    ):
         tier_index += 1
         reason += f" Prompt complexity ({complexity_score:.2f}) reduces the tier one level."
 
-    if time_budget_s < 8 and tier_index == 0:
-        tier_index = 1
+    if time_budget_s < 8 and tier_index == _TIER_ORDER.index("High"):
+        tier_index = _TIER_ORDER.index("Medium")
         reason += " The time budget favors Medium over High."
-    elif time_budget_s < 4 and tier_index == 1:
-        tier_index = 2
+    elif time_budget_s < 4 and tier_index == _TIER_ORDER.index("Medium"):
+        tier_index = _TIER_ORDER.index("Low")
         reason += " The short time budget selects Low."
 
     if _LATENCY_HISTORY and _LATENCY_HISTORY[-1] > time_budget_s:
@@ -138,7 +163,7 @@ def choose_tier(time_budget_s=10, prompt=""):
     elif (
         len(_LATENCY_HISTORY) >= 3
         and all(latency < 0.4 * time_budget_s for latency in list(_LATENCY_HISTORY)[-3:])
-        and tier_index > 0
+        and tier_index > _TIER_ORDER.index("High")
     ):
         tier_index -= 1
         reason += " The last three generations were under 40% of budget; raising one tier."
@@ -162,6 +187,7 @@ def generate_with_fallback(
     postprocess=True,
     time_budget_s=10,
     enhance=True,
+    num_candidates="auto",
 ):
     original_prompt = prompt
     if enhance:
@@ -179,23 +205,43 @@ def generate_with_fallback(
     else:
         raise ValueError(f"Unknown tier {tier!r}; choose 'auto' or one of {tuple(TIERS)}")
 
+    if num_candidates == "auto":
+        candidate_count = (
+            3 if time_budget_s >= 5 and initial_tier in ("High", "Medium") else 1
+        )
+    elif isinstance(num_candidates, int) and not isinstance(num_candidates, bool):
+        if num_candidates < 1:
+            raise ValueError("num_candidates must be positive or 'auto'")
+        candidate_count = num_candidates
+    else:
+        raise ValueError("num_candidates must be a positive integer or 'auto'")
+
     prompt_analysis = analyze_prompt(generation_prompt)
     start_index = _TIER_ORDER.index(initial_tier)
     fallback_happened = False
     fallback_reasons = []
     peak_mem_mb = 0.0
+    total_latency_s = 0.0
+    total_load_time_s = 0.0
 
     for tier_name in _TIER_ORDER[start_index:]:
         settings = TIERS[tier_name]
+        candidates = []
         try:
-            generated = _GENERATOR.generate(
-                config=settings["config"],
-                prompt=generation_prompt,
-                seed=seed,
-                size=settings["size"],
-                steps=settings["steps"],
-                negative_prompt=negative_prompt,
-            )
+            for candidate_index in range(candidate_count):
+                generated = _GENERATOR.generate(
+                    config=settings["config"],
+                    prompt=generation_prompt,
+                    seed=seed + candidate_index,
+                    size=settings["size"],
+                    steps=settings["steps"],
+                    negative_prompt=settings.get("negative_prompt", negative_prompt),
+                    guidance=settings.get("guidance"),
+                )
+                candidates.append(generated["image"])
+                total_latency_s += generated["latency_s"]
+                total_load_time_s += generated["load_time_s"]
+                peak_mem_mb = max(peak_mem_mb, generated["peak_mem_mb"])
         except (torch.cuda.OutOfMemoryError, RuntimeError) as error:
             if tier_name == _TIER_ORDER[-1]:
                 raise
@@ -204,8 +250,8 @@ def generate_with_fallback(
             _drop_pipeline(_GENERATOR)
             continue
 
-        peak_mem_mb = max(peak_mem_mb, generated["peak_mem_mb"])
-        raw_image = generated["image"]
+        chosen_index, candidate_scores = pick_best(candidates, original_prompt)
+        raw_image = candidates[chosen_index]
         final_image, intermediates, quality_before, quality_after = _process_image(
             raw_image, postprocess
         )
@@ -219,10 +265,15 @@ def generate_with_fallback(
                 seed=seed + 1,
                 size=settings["size"],
                 steps=settings["steps"],
-                negative_prompt=negative_prompt,
+                negative_prompt=settings.get("negative_prompt", negative_prompt),
+                guidance=settings.get("guidance"),
             )
+            total_latency_s += generated["latency_s"]
+            total_load_time_s += generated["load_time_s"]
             peak_mem_mb = max(peak_mem_mb, generated["peak_mem_mb"])
-            raw_image = generated["image"]
+            candidates[chosen_index] = generated["image"]
+            chosen_index, candidate_scores = pick_best(candidates, original_prompt)
+            raw_image = candidates[chosen_index]
             final_image, intermediates, quality_before, quality_after = _process_image(
                 raw_image, postprocess
             )
@@ -238,17 +289,20 @@ def generate_with_fallback(
             reason += " " + " ".join(fallback_reasons)
             reason += f" Fell back to {tier_name}."
 
-        latency_s = generated["latency_s"]
+        latency_s = total_latency_s
         _LATENCY_HISTORY.append(latency_s)
         return {
             "raw_image": raw_image,
             "final_image": final_image,
+            "candidates": candidates,
+            "candidate_scores": candidate_scores,
+            "chosen_index": chosen_index,
             "intermediates": intermediates,
             "tier_used": tier_name,
             "reason": reason,
             "fallback_happened": fallback_happened,
             "latency_s": latency_s,
-            "load_time_s": generated["load_time_s"],
+            "load_time_s": total_load_time_s,
             "peak_mem_mb": peak_mem_mb,
             "artifact_retry": artifact_retry,
             "original_prompt": original_prompt,

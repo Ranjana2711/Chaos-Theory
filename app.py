@@ -3,7 +3,7 @@ import re
 
 import gradio as gr
 
-from src.adaptive import generate_with_fallback
+from src.adaptive import TIERS, generate_with_fallback
 
 
 EXAMPLE_PROMPTS = [
@@ -14,15 +14,16 @@ EXAMPLE_PROMPTS = [
 ]
 
 
-def generate(prompt, tier_label, postprocess, enhance, seed):
+def generate(prompt, tier_label, postprocess, enhance, candidate_count, seed):
     if not prompt or not prompt.strip():
         gr.Warning("Please enter a prompt before generating.")
-        return None, None, "", [], {}, {}
+        return None, None, "", [], [], {}, {}
     if not re.search(r"[A-Za-z0-9]", prompt):
         gr.Warning("Please enter a descriptive prompt.")
-        return None, None, "", [], {}, {}
+        return None, None, "", [], [], {}, {}
 
     tier = "auto" if tier_label == "Auto" else tier_label
+    num_candidates = "auto" if candidate_count == "Auto" else int(candidate_count)
     try:
         result = generate_with_fallback(
             prompt=prompt,
@@ -30,18 +31,44 @@ def generate(prompt, tier_label, postprocess, enhance, seed):
             seed=int(seed),
             postprocess=postprocess,
             enhance=enhance,
+            num_candidates=num_candidates,
         )
     except ValueError as error:
         gr.Warning(str(error))
-        return None, None, "", [], {}, {}
+        return None, None, "", [], [], {}, {}
     except Exception as error:
         raise gr.Error(f"Image generation failed: {error}") from error
+
+    tier_settings = TIERS[result["tier_used"]]
+    model_config = result.get("config", tier_settings["config"])
+    steps = result.get("steps", tier_settings["steps"])
+    resolution = result.get(
+        "resolution",
+        result.get("size", tier_settings["size"]),
+    )
+    if isinstance(resolution, (tuple, list)):
+        resolution = "×".join(str(dimension) for dimension in resolution)
+    elif isinstance(resolution, int):
+        resolution = f"{resolution}×{resolution}"
+
+    if model_config == "fast":
+        optimizations = f"fp16 + LCM-LoRA, {steps} steps"
+    elif model_config == "tiny":
+        optimizations = "fp16 + BK-SDM-Tiny + Lanczos upscale"
+    elif model_config == "fp16":
+        optimizations = "fp16, 25 steps"
+    else:
+        optimizations = "none (fp32 reference)"
 
     info = (
         f"**Tier used:** {result['tier_used']}  \n"
         f"**Reason:** {result['reason']}  \n"
         f"**Fallback:** {'Yes' if result['fallback_happened'] else 'No'}  \n"
         f"**Artifact retry:** {'Yes' if result.get('artifact_retry') else 'No'}  \n"
+        f"**Model config:** {model_config}  \n"
+        f"**Steps:** {steps}  \n"
+        f"**Resolution:** {resolution}  \n"
+        f"**Optimizations:** {optimizations}  \n"
         f"**Enhanced prompt:** {result['enhanced_prompt']}  \n"
         f"**Generation latency:** {result['latency_s']:.2f} s  \n"
         f"**Load time:** {result['load_time_s']:.2f} s  \n"
@@ -50,6 +77,16 @@ def generate(prompt, tier_label, postprocess, enhance, seed):
     gallery = [
         (image, step_name)
         for step_name, image in result["intermediates"]
+    ]
+    candidate_gallery = [
+        (
+            image,
+            f"CLIP {score:.2f}"
+            + (" — Chosen" if index == result["chosen_index"] else ""),
+        )
+        for index, (image, score) in enumerate(
+            zip(result["candidates"], result["candidate_scores"])
+        )
     ]
     quality = {
         "quality_before": result["quality_before"],
@@ -65,6 +102,7 @@ def generate(prompt, tier_label, postprocess, enhance, seed):
         result["final_image"],
         info,
         gallery,
+        candidate_gallery,
         quality,
         controller_decisions,
     )
@@ -82,13 +120,18 @@ with gr.Blocks(title="Chaos Theory — Text-to-Image") as demo:
             lines=2,
         )
         tier = gr.Dropdown(
-            choices=["Auto", "High", "Medium", "Low"],
+            choices=["Auto", "Max", "High", "Medium", "Low"],
             value="Auto",
             label="Generation tier",
         )
     with gr.Row():
         postprocess = gr.Checkbox(value=True, label="Post-process output")
         enhance = gr.Checkbox(value=True, label="Prompt enhancement")
+        candidate_count = gr.Dropdown(
+            choices=["Auto", "1", "2", "3", "4"],
+            value="Auto",
+            label="Candidates",
+        )
         seed = gr.Number(value=42, precision=0, label="Seed")
         generate_button = gr.Button("Generate", variant="primary")
 
@@ -108,17 +151,23 @@ with gr.Blocks(title="Chaos Theory — Text-to-Image") as demo:
         columns=3,
         height="auto",
     )
+    candidate_output = gr.Gallery(
+        label="Candidates",
+        columns=4,
+        height=240,
+    )
     quality_output = gr.JSON(label="Quality and artifact report")
     controller_output = gr.JSON(label="Controller decisions")
 
     generate_button.click(
         fn=generate,
-        inputs=[prompt, tier, postprocess, enhance, seed],
+        inputs=[prompt, tier, postprocess, enhance, candidate_count, seed],
         outputs=[
             raw_output,
             final_output,
             info_output,
             intermediate_output,
+            candidate_output,
             quality_output,
             controller_output,
         ],

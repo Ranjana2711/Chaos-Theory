@@ -35,7 +35,7 @@ CONFIGS = {
         "model": "stable-diffusion-v1-5/stable-diffusion-v1-5",
         "dtype": torch.float16,
         "steps": 4,
-        "guidance": 1.5,
+        "guidance": 1.8,
         "scheduler": "lcm",
         "lora": "latent-consistency/lcm-lora-sdv1-5",
     },

@@ -46,7 +46,7 @@ def enhance_prompt(prompt):
         terms = _STYLE_TERMS["photo"]
 
     added_terms = []
-    for term in terms:
+    for term in terms[:4]:
         pattern = r"(?<!\w)" + re.escape(term) + r"(?!\w)"
         if not re.search(pattern, original, flags=re.IGNORECASE):
             added_terms.append(term)
